@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<addon id="plugin.video.vvvvid" version="0.1.1" name="vvvvid" provider-name="evilsephiroth">
+    <requires>
+        <import addon="xbmc.python" version="2.1.0"/>
+    </requires>
+    <extension point="xbmc.python.pluginsource" library="default.py">
+        <provides>video</provides>
+    </extension>
+    <extension point="xbmc.addon.metadata">
+        <summary>vvvvid.it</summary>
+        <description>Plugin to view vvvvid.it content</description>
+        <platform>all</platform>
+    </extension>
+</addon>
