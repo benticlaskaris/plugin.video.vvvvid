@@ -4,7 +4,11 @@ import json
 from Channel import *
 from ChannelCategory import *
 from ElementChannel import *
+from ItemPlayableChannel import *
 from _warnings import filters
+from _elementtree import Element
+from SeasonEpisode import *
+from ItemPlayableSeason import *
 
 VVVVID_BASE_URL="http://www.vvvvid.it/vvvvid/ondemand/"
 ANIME_CHANNELS_PATH= "anime/channels"
@@ -50,11 +54,10 @@ def getSingleChannelPath(type):
      elif type == MODE_SHOWS:
          return SHOW_SINGLE_CHANNEL_PATH
 
-def get_section_channels(modeType,filtersSearch = False,categoriesSearch = False):
+def get_section_channels(modeType):
     channelUrl = getChannelsPath(modeType)
     response = urllib2.urlopen(VVVVID_BASE_URL+channelUrl)
     data = json.loads(response.read().decode(response.info().getparam('charset') or 'utf-8'))
-    print data
     channels = data['data']
     listChannels = []
     for channelData in channels:
@@ -62,77 +65,83 @@ def get_section_channels(modeType,filtersSearch = False,categoriesSearch = False
         path=''
         listCategory = []
         listFilters = []
-        filters = False
-        categories = False
         if(channelData.has_key('filter')):
             for filter in channelData['filter']:
                 listFilters.append(filter)
-                filters = True
-                if(filtersSearch == True):
-                    singleChannelPath = getSingleChannelPath(modeType)
-                    channel = Channel(channelData['id'],filter,path,channelData['type'],listFilters,listCategory,None) 
-                    params = build_params_for_channels(channel.id,channel.type,path,singleChannelPath,None,None,modeType,True,False,filter)
-                    channel.parameters= params
-                    listChannels.append(channel)
-        if(channelData.has_key('path_name')):
-            path = channelData['path_name']
         if(channelData.has_key('category')):
             for category in channelData['category']:
                 channelCategoryElem = ChannelCategory(category['id'],category['name'])
                 listCategory.append(channelCategoryElem)
-                categories = True
-                if(categoriesSearch == True):
-                    singleChannelPath = getSingleChannelPath(modeType)
-                    channel = Channel(channelData['id'],channelCategoryElem.name,path,channelData['type'],None,None,None) 
-                    params = build_params_for_channels(channel.id,channel.type,path,singleChannelPath,None,None,modeType,False,True,channelCategoryElem.id)
-                    channel.parameters = params
-                    listChannels.append(channel)
-                    
-        if(filtersSearch == False and categoriesSearch == False):
-            singleChannelPath = getSingleChannelPath(modeType)
-            channel = Channel(channelData['id'],channelData['name'],path,channelData['type'],listFilters,listCategory,None) 
-            params = build_params_for_channels(channel.id,channel.type,path,singleChannelPath,filters,categories,modeType)
-            channel.parameters = params
-            listChannels.append(channel)
+        
+        channel = Channel(unicode(channelData['id']),channelData['name'],listFilters,listCategory) 
+        listChannels.append(channel)
     return listChannels
 
-def build_params_for_channels(id,type,path,middle_path,filters,categories,globalMode,filterSearch = False,categorySearch = False,idValue = 0):
-    params = dict()
-    params['id'] = id
-    params['type'] = type
-    params['path'] = path
-    params['mode'] = CHANNEL_MODE
-    params['middle_path'] = middle_path
-    params['filters'] = filters
-    params['categories'] = categories
-    if((params.has_key('filters') and params['filters'] == True) or (params.has_key('categories') and params['categories'] == True)):
-        params['mode'] = globalMode
-    if filterSearch == True:
-        params['filterSearch'] = filterSearch
-        params['filterValue'] = idValue
-    if categorySearch == True:
-        params['categorySearch'] = categorySearch
-        params['categoryValue'] = idValue
-    return params
-
-def build_params_for_channel_element(id,show_id,show_type,middle_path):
-    params = dict()
-    params['id'] = id
-    params['show_id'] = show_id
-    params['show_type'] = show_type
-    params['mode'] = SINGLE_ELEMENT_CHANNEL_MODE
-    params['middle_path'] = middle_path
-    return params
-
-def get_elements_from_channel(id,type,middle_path,additionalPath):
-    response = urllib2.urlopen(VVVVID_BASE_URL+middle_path + id + additionalPath)
+def get_elements_from_channel(idChannel,type,idFilter = '',idCategory = ''):
+    middlePath = getSingleChannelPath(type)
+    urlPostFix = ''
+    if(idFilter != ''):
+        urlPostFix += '/last/?filter=' + idFilter
+    elif(idCategory != ''):
+        urlPostFix += '/?category=' + idCategory
+    urlToLoad = VVVVID_BASE_URL+middlePath + str(idChannel) + urlPostFix
+    response = urllib2.urlopen(urlToLoad)
     data = json.loads(response.read().decode(response.info().getparam('charset') or 'utf-8'))
-    print data
     elements = data['data']
     listElements = []
     for elementData in elements:
-        elementChannel = ElementChannel(elementData['id'],elementData['show_id'],elementData['title'],elementData['thumbnail'],elementData['ondemand_type'],elementData['show_type'])
-        params = build_params_for_channel_element(elementChannel.id,elementChannel.show_id,elementChannel.show_type,ANIME_SINGLE_ELEMENT_CHANNEL_PATH)
-        elementChannel.parameters = params
+        elementChannel = ElementChannel(unicode(elementData['id']),unicode(elementData['show_id']),elementData['title'],elementData['thumbnail'],elementData['ondemand_type'],elementData['show_type'])
         listElements.append(elementChannel)
     return listElements
+
+def get_item_playable(idItem):
+    urlToLoad = VVVVID_BASE_URL+idItem + '/info'
+    response = urllib2.urlopen(urlToLoad)
+    data = json.loads(response.read().decode(response.info().getparam('charset') or 'utf-8'))
+    info = data['data']
+    itemPlayable = ItemPlayableChannel()
+    itemPlayable.title = info['title']
+    itemPlayable.thumb = info['thumbnail']
+    itemPlayable.id = info['id']
+    itemPlayable.show_id = info['show_id']
+    itemPlayable.ondemand_type = info['ondemand_type']
+    itemPlayable.show_type = info['show_type']
+    itemPlayable = get_seasons_for_item(itemPlayable)
+    return itemPlayable
+    
+def get_seasons_for_item(itemPlayable):
+    urlToLoad = VVVVID_BASE_URL+str(itemPlayable.show_id) + '/seasons'
+    response = urllib2.urlopen(urlToLoad)
+    data = json.loads(response.read().decode(response.info().getparam('charset') or 'utf-8'))
+    result = data['data']
+    itemPlayable.seasons = []
+    for seasonData in result:
+        season = ItemPlayableSeason()
+        season.id = seasonData['show_id']
+        season.show_id = seasonData ['show_id']
+        season.season_id = seasonData['season_id']
+        season.title = seasonData['name']
+        urlToLoadSeason = VVVVID_BASE_URL+str(itemPlayable.show_id) + '/season/' + str(season.season_id)
+        responseSeason = urllib2.urlopen(urlToLoadSeason)
+        dataSeason = json.loads(responseSeason.read().decode(responseSeason.info().getparam('charset') or 'utf-8'))
+        resultSeason = dataSeason['data']
+        listEpisode = []
+        for episodeData in resultSeason:
+            if(episodeData['video_id'] != '-1'):
+                episode = SeasonEpisode()
+                episode.show_id = season.show_id
+                episode.season_id = season.season_id
+                episode.manifest = episodeData['embed_info'] + '?g=DRIEGSYPNOBI&hdcore=3.6.0&plugin=aasp-3.6.0.50.41'
+                episode.title = episodeData['title']
+                episode.thumb = episodeData['thumbnail']
+                listEpisode.append(episode)
+        season.episodes = listEpisode
+        itemPlayable.seasons.append(season)
+    return itemPlayable
+        
+    
+        
+
+        
+
+    

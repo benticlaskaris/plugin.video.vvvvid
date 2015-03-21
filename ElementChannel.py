@@ -7,7 +7,6 @@ class ElementChannel():
     id=0
     ondemand_type = 0
     show_type = 0
-    parameters=dict()
 
     def __init__(self, id,show_id,title, thumb, ondemand_type, show_type):
         self.title = title

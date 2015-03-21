@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<addon id="plugin.video.vvvvid" version="0.1.1" name="vvvvid" provider-name="evilsephiroth">
+<addon id="plugin.video.vvvvid" version="0.2.0" name="vvvvid" provider-name="evilsephiroth">
     <requires>
         <import addon="xbmc.python" version="2.1.0"/>
+        <import addon="script.module.xbmcswift2" version="2.4.0"/>
     </requires>
     <extension point="xbmc.python.pluginsource" library="default.py">
         <provides>video</provides>

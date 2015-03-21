@@ -1,4 +1,4 @@
-import xbmc, xbmcgui, xbmcaddon, xbmcplugin, re
+import re
 import urllib, urllib2
 import re, string
 import threading
@@ -8,67 +8,372 @@ import sys
 #from t0mm0.common.addon import Addon
 #from t0mm0.common.net import Net
 import urlparse
-import xbmcplugin
-import xbmcaddon
-import xbmc
-import xbmcgui
 import urllib2
 import json
 from requester import  *
+from xbmcswift2 import *
+from  resources.lib.F4mProxy import f4mProxyHelper
 
-handleAddon = int(sys.argv[1])
-global channels
 # plugin constants
 __plugin__ = "plugin.video.vvvvid"
 __author__ = "evilsephiroth"
 
-Addon = xbmcaddon.Addon(id=__plugin__)
+plugin = Plugin()
+handleAddon = sys.argv[1]
 
-global sectionType
 
-# utility functions
-def parameters_string_to_dict(parameters):
-    ''' Convert parameters encoded in a URL to a dict. '''
-    paramDict = dict(urlparse.parse_qsl(parameters[1:]))
-    return paramDict
+@plugin.route('/',name="root")
+def show_main_channels():
+    items = [{
+        'label': ROOT_LABEL_ANIME,
+        'path' : plugin.url_for('animeChannels'),
+        'is_playable': False
+    },
+    {
+        'label': ROOT_LABEL_MOVIES,
+        'path' : plugin.url_for('movieChannels'),
+        'is_playable': False
+    },
+    {
+        'label': ROOT_LABEL_SHOWS,
+        'path' : plugin.url_for('tvChannels'),
+        'is_playable': False
+    }];
+    return items;
 
-def str2bool(v):
-  return v.lower() in ("yes", "true", "t", "1")
+@plugin.route('/movie/channels',name="movieChannels")
+def showMovieChannels():
+    channels = get_section_channels(MODE_MOVIES)
+    currentGlobalChannels = channels
+    items = []
+    for channel in currentGlobalChannels:
+        item = dict()
+        item['label'] = channel.title
+        item['is_playable'] = False
+        if(len(channel.filterList) != 0):
+            item['path'] = plugin.url_for('showMovieChannelFilters',idChannel=channel.id)
+        elif(len(channel.categoryList) != 0):
+            item['path'] = plugin.url_for('showMovieChannelCategories',idChannel=channel.id)
+        else:
+           item['path'] = plugin.url_for('showMovieSingleChannel',idChannel=channel.id)
+        items.append(item)
+    return items
 
-def addDirectoryItem(name, thumb = '',isFolder=True, parameters={}):
-    li = xbmcgui.ListItem(label=name,thumbnailImage=thumb)
-    url = sys.argv[0] + '?' + urllib.urlencode(parameters)
-    print 'urlforitem'
-    print url
-    return xbmcplugin.addDirectoryItem(handle=handleAddon, url=url, listitem=li, isFolder=isFolder)
+@plugin.route('/movie/channel/<idChannel>/filter/<filter>',name="showMovieSingleChannelFilter")
+@plugin.route('/movie/channel/<idChannel>/category/<category>',name="showMovieSingleChannelCategory")
+@plugin.route('/movie/channel/<idChannel>',name="showMovieSingleChannel")
+def showMovieSingleChannel(idChannel,filter = '',category = ''):
+    channelsElements = get_elements_from_channel(idChannel,MODE_MOVIES,filter,category) 
+    items = []
+    for element in channelsElements:
+        item = dict()
+        item['label'] = element.title
+        item['is_playable'] = False
+        item['thumbnail']= element.thumb
+        item['path'] = plugin.url_for('showSingleMovieItem',idItem = element.show_id)
+        items.append(item)
+    return items
 
-def show_root_menu():
-    ''' Show the plugin root menu. '''
-    addDirectoryItem(name=ROOT_LABEL_MOVIES, parameters={ PARAMETER_KEY_MODE: MODE_MOVIES }, isFolder=True)
-    addDirectoryItem(name=ROOT_LABEL_ANIME, parameters={ PARAMETER_KEY_MODE: MODE_ANIME }, isFolder=True)
-    addDirectoryItem(name=ROOT_LABEL_SHOWS, parameters={ PARAMETER_KEY_MODE: MODE_SHOWS }, isFolder=True)
-    xbmcplugin.endOfDirectory(handle=handleAddon, succeeded=True)
-   
-def show_section(type,params):
-    print 'show_anime'
-    if((params.has_key('filters') and str2bool(params['filters']) == True)):
-        channels = get_section_channels(type,True,False)
-    elif (params.has_key('categories') and str2bool(params['categories']) == True):
-        channels = get_section_channels(type,False,True)
+@plugin.route('/movie/channel/<idChannel>/filters',name="showMovieChannelFilters")
+def showMovieChannelFilters(idChannel):
+    items = []
+    channels = get_section_channels(MODE_MOVIES)
+    currentGlobalChannels = channels
+    for channel in currentGlobalChannels:
+        if(channel.id == idChannel):
+            for filter in channel.filterList:
+                item = dict()
+                item['label'] = str(filter)
+                item['is_playable'] = False
+                item['path'] = plugin.url_for('showMovieSingleChannelFilter',idChannel=channel.id,filter = str(filter))
+                items.append(item)
+    return items
+
+@plugin.route('/movie/channel/<idChannel>/categories',name="showMovieChannelCategories")
+def showMovieChannelCategories(idChannel):
+    items = []
+    channels = get_section_channels(MODE_MOVIES)
+    currentGlobalChannels = channels
+    for channel in currentGlobalChannels:
+        if(channel.id == idChannel):
+            for category in channel.categoryList:
+                item = dict()
+                item['label'] = str(category.name)
+                item['is_playable'] = False
+                item['path'] = plugin.url_for('showMovieSingleChannelCategory',idChannel=channel.id,category = str(category.id))
+                items.append(item)
+    return items     
+
+@plugin.route('/movie/item/<idItem>',name='showSingleMovieItem')
+def showSingleMovieItem(idItem):
+    items = []
+    itemPlayable = get_item_playable(idItem)
+    if(len(itemPlayable.seasons) > 1):
+        for season in itemPlayable.seasons:
+            item = dict()
+            item['label'] = season.title
+            item['is_playable'] = False
+            item['path'] = plugin.url_for('showSingleMovieItemSeason',idItem=idItem,seasonId = season.season_id)
+            items.append(item)  
     else:
-        channels = get_section_channels(type)
+        episodes = itemPlayable.seasons[0].episodes
+        for episode in episodes:
+                item = dict()
+                item['label'] = episode.title
+                item['is_playable'] = False
+                item['thumbnail']= episode.thumb
+                item['path'] = plugin.url_for('playManifest',manifest=episode.manifest)
+                items.append(item)
+    return items
+
+@plugin.route('/movie/item/<seasonId>/<idItem>',name='showSingleMovieItemSeason')
+def showSingleMovieItemSeason(seasonId,idItem):
+    items = []
+    itemPlayable = get_item_playable(idItem)
+    for season in itemPlayable.seasons:
+        if(unicode(season.season_id) == seasonId):
+            for episode in season.episodes:
+                item = dict()
+                item['label'] = episode.title
+                item['is_playable'] = False
+                item['thumbnail']= episode.thumb
+                item['path'] = plugin.url_for('playManifest',manifest=episode.manifest)
+                items.append(item)
+    return items
+
+@plugin.route('/show/channels',name="showChannels")
+def showTvShowsChannels():
+    channels = get_section_channels(MODE_SHOWS)
+    items = []
     for channel in channels:
-        addDirectoryItem(name=channel.title,isFolder=True,parameters=channel.parameters)
-    xbmcplugin.endOfDirectory(handle=handleAddon, succeeded=True)
-    
-def show_channel_elements(id,path,middle_path,additionalPath):
-    print 'show_channel_content'
-    channelsElements = get_elements_from_channel(id,path,middle_path,additionalPath) 
-    for elem in channelsElements:
-        print 'channelparamselem',elem.parameters
-        addDirectoryItem(name=elem.title,isFolder=True,thumb=elem.thumb,parameters=elem.parameters)
-    xbmcplugin.endOfDirectory(handle=handleAddon, succeeded=True)
-    
+        print
+'''
+
+Start tv
+'''
+@plugin.route('/tv/channels',name="tvChannels")
+def showTvChannels():
+    channels = get_section_channels(MODE_SHOWS)
+    currentGlobalChannels = channels
+    items = []
+    for channel in currentGlobalChannels:
+        item = dict()
+        item['label'] = channel.title
+        item['is_playable'] = False
+        if(len(channel.filterList) != 0):
+            item['path'] = plugin.url_for('showTvChannelFilters',idChannel=channel.id)
+        elif(len(channel.categoryList) != 0):
+            item['path'] = plugin.url_for('showTvChannelCategories',idChannel=channel.id)
+        else:
+           item['path'] = plugin.url_for('showTvSingleChannel',idChannel=channel.id)
+        items.append(item)
+    return items
+        
+@plugin.route('/tv/channel/<idChannel>/filter/<filter>',name="showTvSingleChannelFilter")
+@plugin.route('/tv/channel/<idChannel>/category/<category>',name="showTvSingleChannelCategory")
+@plugin.route('/tv/channel/<idChannel>',name="showTvSingleChannel")
+def showTvSingleChannel(idChannel,filter = '',category = ''):
+    channelsElements = get_elements_from_channel(idChannel,MODE_SHOWS,filter,category) 
+    items = []
+    for element in channelsElements:
+        item = dict()
+        item['label'] = element.title
+        item['is_playable'] = False
+        item['thumbnail']= element.thumb
+        item['path'] = plugin.url_for('showSingleTvItem',idItem = element.show_id)
+        items.append(item)
+    return items
+
+@plugin.route('/anime/channel/<idChannel>/filters',name="showTvChannelFilters")
+def showTvChannelFilters(idChannel):
+    items = []
+    channels = get_section_channels(MODE_SHOWS)
+    currentGlobalChannels = channels
+    for channel in currentGlobalChannels:
+        if(channel.id == idChannel):
+            for filter in channel.filterList:
+                item = dict()
+                item['label'] = str(filter)
+                item['is_playable'] = False
+                item['path'] = plugin.url_for('showTvSingleChannelFilter',idChannel=channel.id,filter = str(filter))
+                items.append(item)
+    return items
+
+@plugin.route('/tv/channel/<idChannel>/categories',name="showTvChannelCategories")
+def showTvChannelCategories(idChannel):
+    items = []
+    channels = get_section_channels(MODE_SHOWS)
+    currentGlobalChannels = channels
+    for channel in currentGlobalChannels:
+        if(channel.id == idChannel):
+            for category in channel.categoryList:
+                item = dict()
+                item['label'] = str(category.name)
+                item['is_playable'] = False
+                item['path'] = plugin.url_for('showTvSingleChannelCategory',idChannel=channel.id,category = str(category.id))
+                items.append(item)
+    return items     
+
+@plugin.route('/tv/item/<idItem>',name='showSingleTvItem')
+def showSingleTvItem(idItem):
+    items = []
+    itemPlayable = get_item_playable(idItem)
+    if(len(itemPlayable.seasons) > 1):
+        for season in itemPlayable.seasons:
+            item = dict()
+            item['label'] = season.title
+            item['is_playable'] = False
+            item['path'] = plugin.url_for('showSingleTvItemSeason',idItem=idItem,seasonId = season.season_id)
+            items.append(item)  
+    else:
+        episodes = itemPlayable.seasons[0].episodes
+        for episode in episodes:
+                item = dict()
+                item['label'] = episode.title
+                item['is_playable'] = False
+                item['thumbnail']= episode.thumb
+                item['path'] = plugin.url_for('playManifest',manifest=episode.manifest)
+                items.append(item)
+    return items
+
+@plugin.route('/tv/item/<seasonId>/<idItem>',name='showSingleTvItemSeason')
+def showSingleAnimeItemSeason(seasonId,idItem):
+    items = []
+    itemPlayable = get_item_playable(idItem)
+    for season in itemPlayable.seasons:
+        if(unicode(season.season_id) == seasonId):
+            for episode in season.episodes:
+                item = dict()
+                item['label'] = episode.title
+                item['is_playable'] = False
+                item['thumbnail']= episode.thumb
+                item['path'] = plugin.url_for('playManifest',manifest=episode.manifest)
+                items.append(item)
+    return items
+
+'''
+end tv
+'''
+
+'''
+start anime
+'''
+@plugin.route('/anime/channels',name="animeChannels")
+def showAnimeChannels():
+    channels = get_section_channels(MODE_ANIME)
+    currentGlobalChannels = channels
+    items = []
+    for channel in currentGlobalChannels:
+        item = dict()
+        item['label'] = channel.title
+        item['is_playable'] = False
+        if(len(channel.filterList) != 0):
+            item['path'] = plugin.url_for('showAnimeChannelFilters',idChannel=channel.id)
+        elif(len(channel.categoryList) != 0):
+            item['path'] = plugin.url_for('showAnimeChannelCategories',idChannel=channel.id)
+        else:
+           item['path'] = plugin.url_for('showAnimeSingleChannel',idChannel=channel.id)
+        items.append(item)
+    return items
+        
+@plugin.route('/anime/channel/<idChannel>/filter/<filter>',name="showAnimeSingleChannelFilter")
+@plugin.route('/anime/channel/<idChannel>/category/<category>',name="showAnimeSingleChannelCategory")
+@plugin.route('/anime/channel/<idChannel>',name="showAnimeSingleChannel")
+def showAnimeSingleChannel(idChannel,filter = '',category = ''):
+    channelsElements = get_elements_from_channel(idChannel,MODE_ANIME,filter,category) 
+    items = []
+    for element in channelsElements:
+        item = dict()
+        item['label'] = element.title
+        item['is_playable'] = False
+        item['thumbnail']= element.thumb
+        item['path'] = plugin.url_for('showSingleAnimeItem',idItem = element.show_id)
+        items.append(item)
+    return items
+
+@plugin.route('/anime/channel/<idChannel>/filters',name="showAnimeChannelFilters")
+def showAnimeChannelFilters(idChannel):
+    items = []
+    channels = get_section_channels(MODE_ANIME)
+    currentGlobalChannels = channels
+    for channel in currentGlobalChannels:
+        if(channel.id == idChannel):
+            for filter in channel.filterList:
+                item = dict()
+                item['label'] = str(filter)
+                item['is_playable'] = False
+                item['path'] = plugin.url_for('showAnimeSingleChannelFilter',idChannel=channel.id,filter = str(filter))
+                items.append(item)
+    return items
+
+@plugin.route('/anime/channel/<idChannel>/categories',name="showAnimeChannelCategories")
+def showAnimeChannelCategories(idChannel):
+    items = []
+    channels = get_section_channels(MODE_ANIME)
+    currentGlobalChannels = channels
+    for channel in currentGlobalChannels:
+        if(channel.id == idChannel):
+            for category in channel.categoryList:
+                item = dict()
+                item['label'] = str(category.name)
+                item['is_playable'] = False
+                item['path'] = plugin.url_for('showAnimeSingleChannelCategory',idChannel=channel.id,category = str(category.id))
+                items.append(item)
+    return items     
+
+@plugin.route('/anime/item/<idItem>',name='showSingleAnimeItem')
+def showSingleAnimeItem(idItem):
+    items = []
+    itemPlayable = get_item_playable(idItem)
+    if(len(itemPlayable.seasons) > 1):
+        for season in itemPlayable.seasons:
+            item = dict()
+            item['label'] = season.title
+            item['is_playable'] = False
+            item['path'] = plugin.url_for('showSingleAnimeItemSeason',idItem=idItem,seasonId = season.season_id)
+            items.append(item)  
+    else:
+        episodes = itemPlayable.seasons[0].episodes
+        for episode in episodes:
+                item = dict()
+                item['label'] = episode.title
+                item['is_playable'] = False
+                item['thumbnail']= episode.thumb
+                item['path'] = plugin.url_for('playManifest',manifest=episode.manifest)
+                items.append(item)
+    return items
+
+@plugin.route('/anime/item/<seasonId>/<idItem>',name='showSingleAnimeItemSeason')
+def showSingleAnimeItemSeason(seasonId,idItem):
+    items = []
+    itemPlayable = get_item_playable(idItem)
+    for season in itemPlayable.seasons:
+        if(unicode(season.season_id) == seasonId):
+            for episode in season.episodes:
+                item = dict()
+                item['label'] = episode.title
+                item['is_playable'] = False
+                item['thumbnail']= episode.thumb
+                item['path'] = plugin.url_for('playManifest',manifest=episode.manifest)
+                items.append(item)
+    return items
+'''
+
+end anime
+'''
+@plugin.route('/watch/<manifest>',name='playManifest')
+def playManifest(manifest):
+    print manifest
+    print manifest
+    print manifest
+    print manifest
+    print manifest
+    print manifest
+    print manifest
+    player=f4mProxyHelper()
+    player.playF4mLink(manifest, 'prova')
+    print
+
     
 # Depending on the mode, call the appropriate function to build the UI.
 
@@ -83,30 +388,16 @@ if REMOTE_DBG:
     except ImportError:
          sys.stderr.write("Error: " + "You must add org.python.pydev.debug.pysrc to your PYTHONPATH.")
          sys.exit(1)
-         
-params = parameters_string_to_dict(sys.argv[2])
-print 'myparams',params
-print sys.argv[2]
 
-if not sys.argv[2]:
-    # new start
-    ok = show_root_menu()  
-elif (params.has_key(PARAMETER_KEY_MODE)):
-    if params[PARAMETER_KEY_MODE]==CHANNEL_MODE:
-        print 'showchannel'
-        additionalPath = ''
-        if(params.has_key('filterSearch')):
-            additionalPath = '?filter=' + params['filterValue']
-        elif(params.has_key('categorySearch')):
-            additionalPath = '?category=' + params['categoryValue']
-        
-        show_channel_elements(params['id'],params['type'],params['middle_path'],additionalPath)
-    else:
-        if params[PARAMETER_KEY_MODE]==MODE_MOVIES:
-            ok = show_section(MODE_MOVIES,params)
-        elif params[PARAMETER_KEY_MODE]==MODE_ANIME:
-            ok = show_section(MODE_ANIME,params)
-        elif params[PARAMETER_KEY_MODE]==MODE_SHOWS:
-           ok = show_section(MODE_SHOWS,params)
-
+if __name__ == '__main__':
+    plugin.run()
+"""
+kwargs = {
+            'label': label,
+            'label2': label2,
+            'iconImage': icon,
+            'thumbnailImage': thumbnail,
+            'path': path,
+        }
+"""
  
