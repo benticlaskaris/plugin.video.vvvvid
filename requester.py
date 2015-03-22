@@ -131,8 +131,13 @@ def get_seasons_for_item(itemPlayable):
                 episode = SeasonEpisode()
                 episode.show_id = season.show_id
                 episode.season_id = season.season_id
-                episode.manifest = episodeData['embed_info'] + '?g=DRIEGSYPNOBI&hdcore=3.6.0&plugin=aasp-3.6.0.50.41'
-                episode.title = episodeData['title']
+                prefix = ''
+                postfix= '?g=DRIEGSYPNOBI&hdcore=3.6.0&plugin=aasp-3.6.0.50.41'
+                if('http' not in episodeData['embed_info']):
+                    prefix = 'http://wowzaondemand.top-ix.org/videomg/_definst_/mp4:'
+                    postfix = '/manifest.f4m'
+                episode.manifest = prefix +  episodeData['embed_info'] + postfix
+                episode.title = episodeData['number'] + ' - ' + episodeData['title']
                 episode.thumb = episodeData['thumbnail']
                 listEpisode.append(episode)
         season.episodes = listEpisode

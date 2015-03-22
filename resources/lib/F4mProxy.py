@@ -59,8 +59,6 @@ class MyHandler(BaseHTTPRequestHandler):
         rtype="flv-application/octet-stream"  #default type could have gone to the server to get it.
         self.send_header("Content-Type", rtype)
         self.send_header("Accept-Ranges","bytes")
-        self.send_header("Connection", 'close')        
-        self.send_header("Content-Disposition", "attachment")
         self.end_headers()
 
     """
@@ -163,33 +161,7 @@ class MyHandler(BaseHTTPRequestHandler):
                     rtype="flv-application/octet-stream"  #default type could have gone to the server to get it.
                     self.send_header("Content-Type", rtype)
                     srange=None
-                    
-            elif streamtype=='SIMPLE' or simpledownloader :
-                downloader=interalSimpleDownloader();
-                if not downloader.init(self.wfile,url,proxy,g_stopEvent,maxbitrate):
-                    print 'cannot init'
-                    return
-                srange,framgementToSend=(None,None)
-                self.send_response(200)
-                rtype="flv-application/octet-stream"  #default type could have gone to the server to get it.
-                self.send_header("Content-Type", rtype)
-                srange=None
-            elif streamtype=='HLS' or simpledownloader :
-                downloader=HLSDownloader()
-                if not downloader.init(self.wfile,url,proxy,use_proxy_for_chunks,g_stopEvent,maxbitrate,auth):
-                    print 'cannot init'
-                    return
-                    
-                srange,framgementToSend=(None,None)
-                self.send_response(200)
-                rtype="flv-application/octet-stream"  #default type could have gone to the server to get it.
-                self.send_header("Content-Type", rtype)
-                srange=None
-            
-
-            #rtype="flv-application/octet-stream"  #default type could have gone to the server to get it. 
-            #self.send_header("Content-Type", rtype)    
-               
+ 
             self.end_headers()
             #if not srange==None:
              #   srange=srange/inflate
@@ -198,14 +170,11 @@ class MyHandler(BaseHTTPRequestHandler):
                 startRangeParam = 0
                 if(srange != None):
                     startRangeParam = int(srange)
-                #downloader.keep_sending_video(self.wfile,framgementToSend,0,startRangeParam)
+                downloader.keep_sending_video(self.wfile,framgementToSend,0,startRangeParam)
                 #runningthread=thread.start_new_thread(downloader.download,(self.wfile,url,proxy,use_proxy_for_chunks,))
                 print 'srange,framgementToSend',srange,framgementToSend
-                runningthread=thread.start_new_thread(downloader.keep_sending_video(self.wfile,framgementToSend,0,startRangeParam))
+                #runningthread=thread.start_new_thread(downloader.keep_sending_video(self.wfile,framgementToSend,0,startRangeParam))
                 
-                #xbmc.sleep(500)
-                #while not downloader.status=="finished":
-                 #   xbmc.sleep(200);
 
 
         except:
@@ -310,6 +279,7 @@ class Server(HTTPServer):
             except socket.timeout:
                 pass
                 print 'waitSocketTimeout'
+                xbmc.sleep(200)
         result[0].settimeout(1000)
         return result
  
@@ -327,14 +297,14 @@ class f4mProxy():
         global g_stopEvent
         print 'port',port,'HOST_NAME',HOST_NAME
         g_stopEvent = stopEvent
-        socket.setdefaulttimeout(5000)
+        socket.setdefaulttimeout(5)
         server_class = ThreadedHTTPServer
         #MyHandler.protocol_version = "HTTP/1.1"
         MyHandler.protocol_version = "HTTP/1.1"
         httpd = server_class((HOST_NAME, port), MyHandler)
         
         print "XBMCLocalProxy Starts - %s:%s" % (HOST_NAME, port)
-        while(True and not stopEvent.isSet()):
+        while(True):
             httpd.handle_request()
         httpd.server_close()
         print "XBMCLocalProxy Stops %s:%s" % (HOST_NAME, port)
@@ -390,16 +360,10 @@ class f4mProxyHelper():
         while True:
             if stopPlaying.isSet():
                 break;
-            #if not xbmc.Player().isPlaying():
-            #    break
             xbmc.log('Sleeping...')
             xbmc.sleep(200)
-            #if firstTime:
-            #    xbmc.executebuiltin('Dialog.Close(all,True)')
-            #    firstTime=False
         stopPlaying.isSet()
 
-        print 'Job done'
         return
         
     def start_proxy(self,url,name,proxy=None,use_proxy_for_chunks=False, maxbitrate=0,simpleDownloader=False,auth=None,streamtype='HDS'):

@@ -43,15 +43,21 @@ class FlvReader(io.BytesIO):
     """
     indexString = 0
     def read_metadata_filesize(self):
-        indexString = self.getvalue().index('filesize')
-        self.read(indexString)
-        self.read_string()
-        return self.read_Number_to_double()
+        try:
+            indexString = self.getvalue().index('filesize')
+            self.read(indexString)
+            self.read_string()
+            return self.read_Number_to_double()
+        except:
+            return 0
     def read_metadata_duration(self):
-        indexString = self.getvalue().index('duration')
-        self.read(indexString)
-        self.read_string()
-        return self.read_Number_to_double()
+        try:
+            indexString = self.getvalue().index('duration')
+            self.read(indexString)
+            self.read_string()
+            return self.read_Number_to_double()
+        except:
+            return 0
     def read_Number_to_double(self):
         return unpack('>d', self.read(8))[0]
     # Utility functions for reading numbers and strings
@@ -129,7 +135,6 @@ class FlvReader(io.BytesIO):
                               'discontinuity_indicator': discontinuity_indicator,
                               })
             print 'fragments'
-            print fragments
         #print 'fragments',fragments
         return {'version': version,
                 'time_scale': time_scale,
@@ -495,6 +500,7 @@ class F4MDownloader():
             try:
                 #formats = [(int(f.attrib.get('bitrate', -1)),f) for f in doc.findall(_add_ns('media'))]
                 formats=[]
+                duration  = 0
                 for f in doc.findall(_add_ns('media')):
                     vtype=f.attrib.get('type', '')
                     if f.attrib.get('type', '')=='video' or vtype=='' :
@@ -529,8 +535,14 @@ class F4MDownloader():
             try:
                 self.metadata = base64.b64decode(media.find(_add_ns('metadata')).text)
                 print 'metadata stream read done'#,media.find(_add_ns('metadata')).text
-                self.total_size = FlvReader(self.metadata).read_metadata_filesize()
                 self.total_duration = FlvReader(self.metadata).read_metadata_duration()
+                if(self.total_duration == 0):
+                    total_duration_text = media.attrib['duration']
+                    self.total_duration = int(float(total_duration_text) * 1000)
+                    
+                self.total_size = FlvReader(self.metadata).read_metadata_filesize()
+                if(self.total_size == 0):
+                    self.total_size = (rate * int(self.total_duration ) * 1000) / 8 
                 print 'totalsize in bytes'
                 print self.total_size
                 print 'totalsize in megabytes'
@@ -578,10 +590,15 @@ class F4MDownloader():
                 try:
                     self.metadata = base64.b64decode(media.find(_add_ns('metadata')).text)
                     print 'metadata stream read done'
-                    readerFile = FlvReader(self.metadata)
-                    self.total_size = readerFile.read_metadata_filesize()
                     readerDuration = FlvReader(self.metadata)
                     self.total_duration = readerDuration.read_metadata_duration()
+                    if(self.total_duration == 0):
+                        total_duration_text = media.attrib['duration']
+                        self.total_duration = int(float(total_duration_text) * 1000)
+                    readerFile = FlvReader(self.metadata)
+                    self.total_size = readerFile.read_metadata_filesize()
+                    if(self.total_size == 0):
+                         self.total_size = (rate * int(self.total_duration) * 1000) / 8
                 except: pass
                 
                 try:
