@@ -122,7 +122,7 @@ def showSingleMovieItem(idItem):
                 item['label'] = episode.title
                 item['is_playable'] = False
                 item['thumbnail']= episode.thumb
-                item['path'] = plugin.url_for('playManifest',manifest=episode.manifest)
+                item['path'] = plugin.url_for('playManifest',manifest=episode.manifest,title = episode.title)
                 items.append(item)
     return items
 
@@ -137,7 +137,7 @@ def showSingleMovieItemSeason(seasonId,idItem):
                 item['label'] = episode.title
                 item['is_playable'] = False
                 item['thumbnail']= episode.thumb
-                item['path'] = plugin.url_for('playManifest',manifest=episode.manifest)
+                item['path'] = plugin.url_for('playManifest',manifest=episode.manifest,title = episode.title)
                 items.append(item)
     return items
 
@@ -232,7 +232,7 @@ def showSingleTvItem(idItem):
                 item['label'] = episode.title
                 item['is_playable'] = False
                 item['thumbnail']= episode.thumb
-                item['path'] = plugin.url_for('playManifest',manifest=episode.manifest)
+                item['path'] = plugin.url_for('playManifest',manifest=episode.manifest,title = episode.title)
                 items.append(item)
     return items
 
@@ -247,7 +247,7 @@ def showSingleAnimeItemSeason(seasonId,idItem):
                 item['label'] = episode.title
                 item['is_playable'] = False
                 item['thumbnail']= episode.thumb
-                item['path'] = plugin.url_for('playManifest',manifest=episode.manifest)
+                item['path'] = plugin.url_for('playManifest',manifest=episode.manifest,title = episode.title)
                 items.append(item)
     return items
 
@@ -339,7 +339,7 @@ def showSingleAnimeItem(idItem):
                 item['label'] = episode.title
                 item['is_playable'] = False
                 item['thumbnail']= episode.thumb
-                item['path'] = plugin.url_for('playManifest',manifest=episode.manifest)
+                item['path'] = plugin.url_for('playManifest',manifest=episode.manifest,title = episode.title)
                 items.append(item)
     return items
 
@@ -354,15 +354,15 @@ def showSingleAnimeItemSeason(seasonId,idItem):
                 item['label'] = episode.title
                 item['is_playable'] = False
                 item['thumbnail']= episode.thumb
-                item['path'] = plugin.url_for('playManifest',manifest=episode.manifest)
+                item['path'] = plugin.url_for('playManifest',manifest=episode.manifest,title = episode.title)
                 items.append(item)
     return items
 '''
 
 end anime
 '''
-@plugin.route('/watch/<manifest>',name='playManifest')
-def playManifest(manifest):
+@plugin.route('/watch/<manifest>/<title>',name='playManifest')
+def playManifest(manifest,title):
     print manifest
     print manifest
     print manifest
@@ -371,7 +371,7 @@ def playManifest(manifest):
     print manifest
     print manifest
     player=f4mProxyHelper()
-    player.playF4mLink(manifest, 'prova')
+    player.playF4mLink(manifest,title)
     print
 
     

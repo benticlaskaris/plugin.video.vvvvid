@@ -291,34 +291,6 @@ def build_fragments_list(boot_info,total_size,total_duration,startFromFregment=N
     print 'checksize',totalSizeCheck
     return res
 
-    
-    #totalFrags=sum(j for i, j in segment_run_table['segment_run'])
-    #lastSegment=segment_run_table['segment_run'][-1]
-    #lastSegmentStart= lastSegment[0]
-    #lastSegmentFragCount = lastSegment[1]
-    #print 'totalFrags',totalFrags
-    
-    #first_frag_number = frag_start[0]['first']
-    #startFragOfLastSegment= first_frag_number +totalFrags - lastSegmentFragCount
-    
-    #for (i, frag_number) in zip(range(1, lastSegmentFragCount+1), itertools.count(startFragOfLastSegment)):
-    #    res.append((lastSegmentStart,frag_number )) #this was i, i am using first segement start
-    #return res
-    
-    #segment_run_entry = segment_run_table['segment_run'][0]
-    #print 'segment_run_entry',segment_run_entry,segment_run_table
-    #n_frags = segment_run_entry[1]
-    #startingPoint = segment_run_entry[0]
-    #fragment_run_entry_table = boot_info['fragments'][0]['fragments']
-    #frag_entry_index = 0
-    #first_frag_number = fragment_run_entry_table[0]['first']
-
-    #first_frag_number=(startingPoint*n_frags) -(n_frags)+1
-    #print 'THENUMBERS',startingPoint,n_frags,first_frag_number
-    #for (i, frag_number) in zip(range(1, n_frags+1), itertools.count(first_frag_number)):
-    #    res.append((startingPoint,frag_number )) #this was i, i am using first segement start
-    #return res
-
 def join(base,url):
     join = urlparse.urljoin(base,url)
     url = urlparse.urlparse(join)
@@ -670,6 +642,7 @@ class F4MDownloader():
                 queryString=''
             self.bootstrapURL=bootstrapURL
             self.queryString=queryString
+            print 'arrivato'
             self.bootstrap, self.boot_info, self.fragments_list,self.total_frags=self.readBootStrapInfo(bootstrapURL,bootstrapData)
             self.init_done=True
             return True
@@ -733,6 +706,8 @@ class F4MDownloader():
                 url = self.base_url + name
                 if queryString and '?' not in url:
                     url+='?'+queryString
+                elif '?' in self.base_url:
+                    url = self.base_url.split('?')[0] + name+'?'+self.base_url.split('?')[1]
                 #print(url),base_url,name
                 #frag_filename = u'%s-%s' % (tmpfilename, name)
                 #success = dl._do_download(frag_filename, {'url': url})

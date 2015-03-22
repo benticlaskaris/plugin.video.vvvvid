@@ -121,7 +121,7 @@ class MyHandler(BaseHTTPRequestHandler):
                 
 
                 print 'PROXY DATA',downloader.live,enableSeek,requested_range,downloader.total_frags,srange, erange
-                 
+                framgementToSend = 1
                 for currentFreg in range(len(downloader.fragments_list) - 1,-1,-1):
                     frag = downloader.fragments_list[currentFreg]
                     if(frag[4] <= srange):
@@ -160,8 +160,9 @@ class MyHandler(BaseHTTPRequestHandler):
                     self.send_response(200)
                     rtype="flv-application/octet-stream"  #default type could have gone to the server to get it.
                     self.send_header("Content-Type", rtype)
-                    srange=None
- 
+                    srange=None   
+               
+
             self.end_headers()
             #if not srange==None:
              #   srange=srange/inflate
@@ -170,10 +171,9 @@ class MyHandler(BaseHTTPRequestHandler):
                 startRangeParam = 0
                 if(srange != None):
                     startRangeParam = int(srange)
-                downloader.keep_sending_video(self.wfile,framgementToSend,0,startRangeParam)
+                #downloader.keep_sending_video(self.wfile,framgementToSend,0,startRangeParam)
                 #runningthread=thread.start_new_thread(downloader.download,(self.wfile,url,proxy,use_proxy_for_chunks,))
-                print 'srange,framgementToSend',srange,framgementToSend
-                #runningthread=thread.start_new_thread(downloader.keep_sending_video(self.wfile,framgementToSend,0,startRangeParam))
+                runningthread=thread.start_new_thread(downloader.keep_sending_video(self.wfile,framgementToSend,0,startRangeParam))
                 
 
 
@@ -304,7 +304,7 @@ class f4mProxy():
         httpd = server_class((HOST_NAME, port), MyHandler)
         
         print "XBMCLocalProxy Starts - %s:%s" % (HOST_NAME, port)
-        while(True):
+        while(True and not stopEvent.isSet()):
             httpd.handle_request()
         httpd.server_close()
         print "XBMCLocalProxy Stops %s:%s" % (HOST_NAME, port)

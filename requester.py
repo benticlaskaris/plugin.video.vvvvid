@@ -120,7 +120,10 @@ def get_seasons_for_item(itemPlayable):
         season.id = seasonData['show_id']
         season.show_id = seasonData ['show_id']
         season.season_id = seasonData['season_id']
-        season.title = seasonData['name']
+        if(seasonData.has_key('name')):
+            season.title = seasonData['name']
+        else:
+            season.title = itemPlayable.title
         urlToLoadSeason = VVVVID_BASE_URL+str(itemPlayable.show_id) + '/season/' + str(season.season_id)
         responseSeason = urllib2.urlopen(urlToLoadSeason)
         dataSeason = json.loads(responseSeason.read().decode(responseSeason.info().getparam('charset') or 'utf-8'))
