@@ -140,14 +140,12 @@ def get_seasons_for_item(itemPlayable):
                     prefix = 'http://wowzaondemand.top-ix.org/videomg/_definst_/mp4:'
                     postfix = '/manifest.f4m'
                 episode.manifest = prefix +  episodeData['embed_info'] + postfix
-                episode.title = episodeData['number'] + ' - ' + episodeData['title']
+                episode.title = ((episodeData['number'] + ' - ' + episodeData['title'])).encode('utf-8','replace')
                 episode.thumb = episodeData['thumbnail']
                 listEpisode.append(episode)
         season.episodes = listEpisode
         itemPlayable.seasons.append(season)
     return itemPlayable
-        
-    
         
 
         

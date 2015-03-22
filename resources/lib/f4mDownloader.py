@@ -245,7 +245,6 @@ def build_fragments_list(boot_info,total_size,total_duration,startFromFregment=N
         if (not startFromFregment==None) and startFromFregment>=first_frag_number and startFromFregment<=frag_end:
             segment_to_start=current
         first_frag_number+=fregCount
-    print 'current status',segment_run_table['segment_run']
     #if we have no index then take the last segment
     if segment_to_start==None:
         segment_to_start=len(segment_run_table['segment_run'])-1
@@ -287,8 +286,6 @@ def build_fragments_list(boot_info,total_size,total_duration,startFromFregment=N
             res.append((seg,currentFreg,startDuration,fragSize,(startByte, 0)[bool(startByte<0)]))
             totalSizeCheck += fragSize
         res.sort(key = lambda frag:(frag[0],frag[1]))
-    print 'fragmentlist',res,boot_info
-    print 'checksize',totalSizeCheck
     return res
 
 def join(base,url):

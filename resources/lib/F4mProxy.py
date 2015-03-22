@@ -58,7 +58,7 @@ class MyHandler(BaseHTTPRequestHandler):
         print "XBMCLocalProxy: Serving HEAD request..."
         rtype="flv-application/octet-stream"  #default type could have gone to the server to get it.
         self.send_header("Content-Type", rtype)
-        self.send_header("Accept-Ranges","bytes")
+        #self.send_header("Accept-Ranges","bytes")
         self.end_headers()
 
     """
@@ -128,10 +128,10 @@ class MyHandler(BaseHTTPRequestHandler):
                         framgementToSend=frag[1]
                         fragment_size = frag[3]
                         break
-                
+                enableSeek = False
+                downloader.statusStream = 'seeking'
                 if enableSeek:
-                    self.send_response(206)
-                    downloader.statusStream = 'seeking'
+                    self.send_response(206)  
                     rtype="flv-application/octet-stream"  #default type could have gone to the server to get it.
                     self.send_header("Content-Type", rtype)
                     self.send_header("Last-Modified","Wed, 21 Feb 2014 08:43:39 GMT")
@@ -175,6 +175,9 @@ class MyHandler(BaseHTTPRequestHandler):
                 #runningthread=thread.start_new_thread(downloader.download,(self.wfile,url,proxy,use_proxy_for_chunks,))
                 runningthread=thread.start_new_thread(downloader.keep_sending_video(self.wfile,framgementToSend,0,startRangeParam))
                 
+                xbmc.sleep(500)
+                while not downloader.status=="finished":
+                    xbmc.sleep(200);
 
 
         except:
