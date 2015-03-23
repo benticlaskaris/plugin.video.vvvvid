@@ -58,7 +58,8 @@ class MyHandler(BaseHTTPRequestHandler):
         print "XBMCLocalProxy: Serving HEAD request..."
         rtype="flv-application/octet-stream"  #default type could have gone to the server to get it.
         self.send_header("Content-Type", rtype)
-        #self.send_header("Accept-Ranges","bytes")
+        self.send_header("Accept-Ranges","bytes")
+        
         self.end_headers()
 
     """
@@ -128,7 +129,7 @@ class MyHandler(BaseHTTPRequestHandler):
                         framgementToSend=frag[1]
                         fragment_size = frag[3]
                         break
-                enableSeek = False
+                #enableSeek = False
                 downloader.statusStream = 'seeking'
                 if enableSeek:
                     self.send_response(206)  
@@ -282,15 +283,19 @@ class Server(HTTPServer):
             except socket.timeout:
                 pass
                 print 'waitSocketTimeout'
-                xbmc.sleep(200)
+                xbmc.sleep(5000)
         result[0].settimeout(1000)
         return result
  
+def server_bind(self):
+    HTTPServer.server_bind(self)
+    self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    
 class ThreadedHTTPServer(ThreadingMixIn, Server):
     """Handle requests in a separate thread."""
  
 HOST_NAME = '127.0.0.1'
-PORT_NUMBER = 55333
+PORT_NUMBER = 50000
 
 class f4mProxy():
 
@@ -300,7 +305,7 @@ class f4mProxy():
         global g_stopEvent
         print 'port',port,'HOST_NAME',HOST_NAME
         g_stopEvent = stopEvent
-        socket.setdefaulttimeout(5)
+        socket.setdefaulttimeout(10)
         server_class = ThreadedHTTPServer
         #MyHandler.protocol_version = "HTTP/1.1"
         MyHandler.protocol_version = "HTTP/1.1"
@@ -389,7 +394,7 @@ class MyPlayer (xbmc.Player):
     def play(self, url, listitem):
         print 'Now im playing... %s' % url
         self.stopPlaying.clear()
-        xbmc.Player(xbmc.PLAYER_CORE_DVDPLAYER ).play(url, listitem)
+        xbmc.Player(xbmc.PLAYER_CORE_AUTO ).play(url, listitem)
         
     def onPlayBackEnded( self ):
         # Will be called when xbmc stops playing a file
