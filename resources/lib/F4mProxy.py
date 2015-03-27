@@ -120,7 +120,7 @@ class MyHandler(BaseHTTPRequestHandler):
                     enableSeek=True
                     (srange, erange) = self.get_range_request(requested_range, downloader.total_frags)
                 
-
+                enableSeek=False
                 print 'PROXY DATA',downloader.live,enableSeek,requested_range,downloader.total_frags,srange, erange
                 framgementToSend = 1
                 for currentFreg in range(len(downloader.fragments_list) - 1,-1,-1):
@@ -319,7 +319,7 @@ class f4mProxy():
     def prepare_url(self,url,proxy=None, use_proxy_for_chunks=True,port=PORT_NUMBER, maxbitrate=0,simpleDownloader=False,auth=None, streamtype='HDS'):
         global PORT_NUMBER
         global PORT_NUMBER
-        newurl=urllib.urlencode({'url': url,'proxy':proxy,'use_proxy_for_chunks':use_proxy_for_chunks,'maxbitrate':maxbitrate,'simpledownloader':simpleDownloader,'auth':auth,'streamtype':streamtype})
+        newurl=urllib.urlencode({'url': url})
         link = 'http://'+HOST_NAME+(':%s/'%str(port)) + newurl
         return (link) #make a url that caller then call load into player
 

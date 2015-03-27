@@ -26,7 +26,7 @@ import hmac
 import hashlib
 import base64
 
-addon_id = 'script.video.F4mProxy'
+addon_id = 'plugin.video.vvvvid'
 selfAddon = xbmcaddon.Addon(id=addon_id)
 __addonname__   = selfAddon.getAddonInfo('name')
 __icon__        = selfAddon.getAddonInfo('icon')
