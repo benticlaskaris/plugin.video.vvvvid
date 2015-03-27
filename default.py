@@ -13,13 +13,14 @@ import json
 from requester import  *
 from xbmcswift2 import *
 from  resources.lib.F4mProxy import f4mProxyHelper
+import xbmcplugin
 
 # plugin constants
 __plugin__ = "plugin.video.vvvvid"
 __author__ = "evilsephiroth"
 
 plugin = Plugin()
-handleAddon = sys.argv[1]
+handleAddon = int(sys.argv[1])
 
 
 @plugin.route('/',name="root")
@@ -69,6 +70,7 @@ def showMovieSingleChannel(idChannel,filter = '',category = ''):
         item = dict()
         item['label'] = element.title
         item['is_playable'] = False
+        item['icon']= element.thumb
         item['thumbnail']= element.thumb
         item['path'] = plugin.url_for('showSingleMovieItem',idItem = element.show_id)
         items.append(item)
@@ -117,11 +119,16 @@ def showSingleMovieItem(idItem):
             items.append(item)  
     else:
         episodes = itemPlayable.seasons[0].episodes
+        xbmcplugin.setContent(handleAddon, 'movies')
         for episode in episodes:
                 item = dict()
                 item['label'] = episode.title
                 item['is_playable'] = False
+                item['icon']= episode.thumb
                 item['thumbnail']= episode.thumb
+                props = dict()
+                props.update(fanart_image = item['thumbnail'])
+                item['properties'] = props
                 item['path'] = plugin.url_for('playManifest',manifest=episode.manifest,title = episode.title)
                 items.append(item)
     return items
@@ -130,13 +137,18 @@ def showSingleMovieItem(idItem):
 def showSingleMovieItemSeason(seasonId,idItem):
     items = []
     itemPlayable = get_item_playable(idItem)
+    xbmcplugin.setContent(handleAddon, 'movies')
     for season in itemPlayable.seasons:
         if(unicode(season.season_id) == seasonId):
             for episode in season.episodes:
                 item = dict()
                 item['label'] = episode.title
                 item['is_playable'] = False
+                item['icon']= episode.thumb
                 item['thumbnail']= episode.thumb
+                props = dict()
+                props.update(fanart_image = item['thumbnail'])
+                item['properties'] = props
                 item['path'] = plugin.url_for('playManifest',manifest=episode.manifest,title = episode.title)
                 items.append(item)
     return items
@@ -179,6 +191,7 @@ def showTvSingleChannel(idChannel,filter = '',category = ''):
         item = dict()
         item['label'] = element.title
         item['is_playable'] = False
+        item['icon']= element.thumb
         item['thumbnail']= element.thumb
         item['path'] = plugin.url_for('showSingleTvItem',idItem = element.show_id)
         items.append(item)
@@ -227,11 +240,16 @@ def showSingleTvItem(idItem):
             items.append(item)  
     else:
         episodes = itemPlayable.seasons[0].episodes
+        xbmcplugin.setContent(handleAddon, 'tvshows')
         for episode in episodes:
                 item = dict()
                 item['label'] = episode.title
                 item['is_playable'] = False
+                item['icon']= episode.thumb
                 item['thumbnail']= episode.thumb
+                props = dict()
+                props.update(fanart_image = item['thumbnail'])
+                item['properties'] = props
                 item['path'] = plugin.url_for('playManifest',manifest=episode.manifest,title = episode.title)
                 items.append(item)
     return items
@@ -240,13 +258,18 @@ def showSingleTvItem(idItem):
 def showSingleAnimeItemSeason(seasonId,idItem):
     items = []
     itemPlayable = get_item_playable(idItem)
+    xbmcplugin.setContent(handleAddon, 'tvshows')
     for season in itemPlayable.seasons:
         if(unicode(season.season_id) == seasonId):
             for episode in season.episodes:
                 item = dict()
                 item['label'] = episode.title
                 item['is_playable'] = False
+                item['icon']= episode.thumb
                 item['thumbnail']= episode.thumb
+                props = dict()
+                props.update(fanart_image = item['thumbnail'])
+                item['properties'] = props
                 item['path'] = plugin.url_for('playManifest',manifest=episode.manifest,title = episode.title)
                 items.append(item)
     return items
@@ -286,6 +309,7 @@ def showAnimeSingleChannel(idChannel,filter = '',category = ''):
         item = dict()
         item['label'] = element.title
         item['is_playable'] = False
+        item['icon']= element.thumb
         item['thumbnail']= element.thumb
         item['path'] = plugin.url_for('showSingleAnimeItem',idItem = element.show_id)
         items.append(item)
@@ -334,11 +358,16 @@ def showSingleAnimeItem(idItem):
             items.append(item)  
     else:
         episodes = itemPlayable.seasons[0].episodes
+        xbmcplugin.setContent(handleAddon, 'tvshows')
         for episode in episodes:
                 item = dict()
                 item['label'] = episode.title
                 item['is_playable'] = False
+                item['icon']= episode.thumb
                 item['thumbnail']= episode.thumb
+                props = dict()
+                props.update(fanart_image = item['thumbnail'])
+                item['properties'] = props
                 item['path'] = plugin.url_for('playManifest',manifest=episode.manifest,title = episode.title)
                 items.append(item)
     return items
@@ -347,13 +376,18 @@ def showSingleAnimeItem(idItem):
 def showSingleAnimeItemSeason(seasonId,idItem):
     items = []
     itemPlayable = get_item_playable(idItem)
+    xbmcplugin.setContent(handleAddon, 'tvshows')
     for season in itemPlayable.seasons:
         if(unicode(season.season_id) == seasonId):
             for episode in season.episodes:
                 item = dict()
                 item['label'] = episode.title
                 item['is_playable'] = False
+                item['icon']= episode.thumb
                 item['thumbnail']= episode.thumb
+                props = dict()
+                props.update(fanart_image = item['thumbnail'])
+                item['properties'] = props
                 item['path'] = plugin.url_for('playManifest',manifest=episode.manifest,title = episode.title)
                 items.append(item)
     return items
@@ -374,22 +408,10 @@ def playManifest(manifest,title):
     player.playF4mLink(manifest,title)
     print
 
-    
-# Depending on the mode, call the appropriate function to build the UI.
-
-REMOTE_DBG = False 
-
-    # append pydev remote debugger
-if REMOTE_DBG:
-    try:
-        sys.path.append("/Users/evilsephiroth/eclipsePython/plugins/org.python.pydev_3.9.2.201502050007/pysrc")
-        import pydevd # with the addon script.module.pydevd, only use `import pydevd`
-        pydevd.settrace('localhost', stdoutToServer=True, stderrToServer=True)
-    except ImportError:
-         sys.stderr.write("Error: " + "You must add org.python.pydev.debug.pysrc to your PYTHONPATH.")
-         sys.exit(1)
 
 if __name__ == '__main__':
+    handleAddon = int(sys.argv[1])
+    xbmcplugin.setContent(handleAddon, 'files')
     plugin.run()
 """
 kwargs = {

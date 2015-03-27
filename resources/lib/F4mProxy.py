@@ -3,6 +3,7 @@ XBMCLocalProxy 0.1
 Copyright 2011 Torben Gerkensmeyer
  
 Modified for F4M format by Shani
+Modified for metadata handling by Evilsephiroth
  
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
