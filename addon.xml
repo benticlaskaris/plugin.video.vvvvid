@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<addon id="plugin.video.vvvvid" version="1.0.0" name="vvvvid" provider-name="evilsephiroth">
+<addon id="plugin.video.vvvvid" version="1.0.0" name="VVVVID.it" provider-name="evilsephiroth">
     <requires>
         <import addon="xbmc.python" version="2.1.0"/>
         <import addon="script.module.xbmcswift2" version="2.4.0"/>
@@ -8,8 +8,11 @@
         <provides>video</provides>
     </extension>
     <extension point="xbmc.addon.metadata">
-        <summary>vvvvid.it</summary>
-        <description>Plugin to view vvvvid.it content</description>
+        <summary>VVVVID.it</summary>
+        <description>Plugin to view vvvvid.it content.</description>
+        <disclaimer>The author does not host or distribute any of the content displayed by this addon. The author does not have any affiliation with the content provider.</disclaimer>
+        <source>https://github.com/evilsephiroth</source>
+		<website>https://github.com/evilsephiroth</website>
         <platform>all</platform>
     </extension>
 </addon>
