@@ -1,26 +1,33 @@
+import sys
+#import requests
 import urllib2
 from cookielib import CookieJar
 import urlparse
 import json
 from Channel import *
 from ChannelCategory import *
+from ChannelExtras import *
 from ElementChannel import *
 from ItemPlayableChannel import *
 from _warnings import filters
 from _elementtree import Element
 from SeasonEpisode import *
 from ItemPlayableSeason import *
+from xbmcswift2 import *
 
-VVVVID_BASE_URL="http://www.vvvvid.it/vvvvid/ondemand/"
+VVVVID_BASE_URL="https://www.vvvvid.it/vvvvid/ondemand/"
 ANIME_CHANNELS_PATH= "anime/channels"
 MOVIE_CHANNELS_PATH = "film/channels"
 SHOW_CHANNELS_PATH = "show/channels"
+SERIES_CHANNELS_PATH = "series/channels"
 ANIME_SINGLE_CHANNEL_PATH = "anime/channel/"
 MOVIE_SINGLE_CHANNEL_PATH = "film/channel/"
 SHOW_SINGLE_CHANNEL_PATH = "show/channel/"
+SERIES_SINGLE_CHANNEL_PATH = "series/channel/"
 ANIME_SINGLE_ELEMENT_CHANNEL_PATH = 'anime/'
 SHOW_SINGLE_ELEMENT_CHANNEL_PATH = 'show/'
 MOVIE_SINGLE_ELEMENT_CHANNEL_PATH = 'film/'
+SERIES_SINGLE_ELEMENT_CHANNEL_PATH = 'series/'
 
 CHANNEL_MODE = "channel"
 SINGLE_ELEMENT_CHANNEL_MODE = "elementchannel"
@@ -28,6 +35,7 @@ SINGLE_ELEMENT_CHANNEL_MODE = "elementchannel"
 MODE_MOVIES = '10'
 MODE_ANIME = '20'
 MODE_SHOWS = '30'
+MODE_SERIES = '40'
 
 # parameter keys
 PARAMETER_KEY_MODE = "mode"
@@ -37,6 +45,7 @@ PARAMETER_KEY_MODE = "mode"
 ROOT_LABEL_MOVIES = "Movies"
 ROOT_LABEL_ANIME = "Anime"
 ROOT_LABEL_SHOWS = "Shows"
+ROOT_LABEL_SERIES = "Series"
 
 # episode stream type
 F4M_TYPE = '10'
@@ -50,14 +59,18 @@ def getChannelsPath(type):
         return ANIME_CHANNELS_PATH
     elif type == MODE_SHOWS:
         return SHOW_CHANNELS_PATH
+    elif type == MODE_SERIES:
+        return SERIES_CHANNELS_PATH
 
 def getSingleChannelPath(type):
-     if type == MODE_MOVIES:
+    if type == MODE_MOVIES:
          return MOVIE_SINGLE_CHANNEL_PATH
-     elif type == MODE_ANIME:
+    elif type == MODE_ANIME:
          return ANIME_SINGLE_CHANNEL_PATH
-     elif type == MODE_SHOWS:
+    elif type == MODE_SHOWS:
          return SHOW_SINGLE_CHANNEL_PATH
+    elif type == MODE_SERIES:
+         return SERIES_SINGLE_CHANNEL_PATH
 
 def get_section_channels(modeType):
     channelUrl = VVVVID_BASE_URL + getChannelsPath(modeType) 
@@ -70,6 +83,7 @@ def get_section_channels(modeType):
         path=''
         listCategory = []
         listFilters = []
+        listExtras = []
         if(channelData.has_key('filter')):
             for filter in channelData['filter']:
                 listFilters.append(filter)
@@ -77,22 +91,31 @@ def get_section_channels(modeType):
             for category in channelData['category']:
                 channelCategoryElem = ChannelCategory(category['id'],category['name'])
                 listCategory.append(channelCategoryElem)
-        
-        channel = Channel(unicode(channelData['id']),channelData['name'],listFilters,listCategory) 
+        if(channelData.has_key('extras')):
+            for extra in channelData['extras']:
+                channelExtrasElem = ChannelExtra(extra['id'],extra['name'])
+                listExtras.append(channelExtrasElem)
+
+        channel = Channel(unicode(channelData['id']),channelData['name'],listFilters,listCategory,listExtras) 
         listChannels.append(channel)
     return listChannels
 
-def get_elements_from_channel(idChannel,type,idFilter = '',idCategory = ''):
+def get_elements_from_channel(idChannel,type,idFilter = '',idCategory = '',idExtra = ''):
     middlePath = getSingleChannelPath(type)
-    urlPostFix = ''
+    urlPostFix = '/last/'
     if(idFilter != ''):
-        urlPostFix += '/last/?filter=' + idFilter
+        urlPostFix += '?filter=' + idFilter
     elif(idCategory != ''):
-        urlPostFix += '/?category=' + idCategory
+        urlPostFix += '?category=' + idCategory
+    elif(idExtra != ''):
+        urlPostFix +='?extras=' + idExtra
     urlToLoad = VVVVID_BASE_URL+middlePath + str(idChannel) + urlPostFix
     response = getJsonDataFromUrl(urlToLoad)
     data = json.loads(response.read().decode(response.info().getparam('charset') or 'utf-8'))
-    elements = data['data']
+    if(data.has_key('data')):
+        elements = data['data'];
+    else:
+        elements = []
     listElements = []
     for elementData in elements:
         elementChannel = ElementChannel(unicode(elementData['id']),unicode(elementData['show_id']),elementData['title'],elementData['thumbnail'],elementData['ondemand_type'],elementData['show_type'])
@@ -149,6 +172,28 @@ def get_seasons_for_item(itemPlayable):
                     episode.stream_type = M3U_TYPE
                     prefix = ''
                     postfix = ''
+                '''
+                try:
+                    prefix = 'http://194.116.73.48/videomg/_definst_/mp4:'
+                    postfix = '/manifest.f4m'
+                    episode.stream_type = F4M_TYPE
+                    episode.manifest = prefix + ((episodeData['thumbnail'].replace('https://static.vvvvid.it/img/thumbs/','')).replace('-t.jpg','.mp4/'))+postfix
+                    urllib2.urlopen(episode.manifest)
+                except urllib2.HTTPError, e:
+                    try:
+                        prefix = 'http://vvvvid-vh.akamaihd.net/z/'
+                        postfix = '/manifest.f4m?g=DRIEGSYPNOBI&hdcore=3.6.0&plugin=aasp-3.6.0.50.41'
+                        episode.stream_type = F4M_TYPE
+                        episode.manifest = prefix + ((episodeData['thumbnail'].replace('https://static.vvvvid.it/img/thumbs/','')).replace('-t.jpg','.mp4/'))+postfix
+                        urllib2.urlopen(episode.manifest)
+                    except urllib2.HTTPError, e1:
+                        postfix = '/manifest.f4m?g=DRIEGSYPNOBI&hdcore=3.6.0&plugin=aasp-3.6.0.50.41'
+                        response = request.get('http://vvvvid-vh.akamaihd.net/crossdomain.xml')
+                        plugin = Plugin();plugin.log.error("cookie: "+response.text)
+                        xbmcgui.Dialog().ok('VVVVID.it','Impossibile riprodurre il flusso video')
+                        sys.exit(0)
+                '''
+                #plugin = Plugin();plugin.log.error('manifest: '+ episode.manifest)
                 episode.manifest = prefix +  episodeData['embed_info'] + postfix
                 episode.title = ((episodeData['number'] + ' - ' + episodeData['title'])).encode('utf-8','replace')
                 episode.thumb = episodeData['thumbnail']
@@ -158,18 +203,18 @@ def get_seasons_for_item(itemPlayable):
     return itemPlayable
 
 def getJsonDataFromUrl(customUrl):
-    req = urllib2.Request(customUrl)
-    req.add_header('User-Agent', 'Mozilla/5.0 (Windows; U; Windows NT 5.1; en-GB; rv:1.8.1.14) Gecko/20080404 Firefox/2.0.0.14')
-    page = urllib2.urlopen(req);response=page.read();page.close()
-    cookie=page.info()['Set-Cookie']
+    plugin = Plugin()
+    data_storage = plugin.get_storage('vvvvid')
+    conn_id = data_storage['conn_id']
+    #plugin.log.error('customUrl: '+ customUrl)
+    customUrl += ('&' if ('?' in customUrl) else '?') +'conn_id='+conn_id
+    #plugin.log.error('output:'+ customUrl)
+    #req = urllib2.Request(customUrl)
+    #req.add_header('User-Agent', 'Mozilla/5.0 (Windows; U; Windows NT 5.1; en-GB; rv:1.8.1.14) Gecko/20080404 Firefox/2.0.0.14')
+    #page = urllib2.urlopen(req);response=page.read();page.close()
+    cookie=data_storage['cookie']
     req = urllib2.Request(customUrl)#send the new url with the cookie.
     req.add_header('User-Agent', 'Mozilla/5.0 (Windows; U; Windows NT 5.1; en-GB; rv:1.8.1.14) Gecko/20080404 Firefox/2.0.0.14')
     req.add_header('Cookie',cookie)
     response = urllib2.urlopen(req)
     return response
-    
-        
-
-        
-
-    
