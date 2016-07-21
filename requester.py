@@ -1,9 +1,10 @@
 import sys
 #import requests
-import urllib2
+import urllib,urllib2
 from cookielib import CookieJar
 import urlparse
 import json
+from vvvvid import *
 from Channel import *
 from ChannelCategory import *
 from ChannelExtras import *
@@ -28,6 +29,7 @@ ANIME_SINGLE_ELEMENT_CHANNEL_PATH = 'anime/'
 SHOW_SINGLE_ELEMENT_CHANNEL_PATH = 'show/'
 MOVIE_SINGLE_ELEMENT_CHANNEL_PATH = 'film/'
 SERIES_SINGLE_ELEMENT_CHANNEL_PATH = 'series/'
+VVVVID_KENC_SERVER = 'https://www.vvvvid.it/kenc?action=kt'
 
 CHANNEL_MODE = "channel"
 SINGLE_ELEMENT_CHANNEL_MODE = "elementchannel"
@@ -50,6 +52,15 @@ ROOT_LABEL_SERIES = "Series"
 # episode stream type
 F4M_TYPE = '10'
 M3U_TYPE = '20'     # .m3u8 is the unicode version of .m3u
+
+# video types
+AKAMAI_TYPE = 'video/rcs'
+KENC_TYPE = 'video/kenc'
+ENC_TYPE = 'video/enc'
+VVVVID_TYPE = 'video/vvvvid'
+
+# manifest server
+STREAM_HTTP = 'http://194.116.73.48/videomg/_definst_/mp4:'
 
 
 def getChannelsPath(type):
@@ -160,41 +171,31 @@ def get_seasons_for_item(itemPlayable):
         for episodeData in resultSeason:
             if(episodeData['video_id'] != '-1'):
                 episode = SeasonEpisode()
+                embed_info = dec_ei(episodeData['embed_info'])
                 episode.show_id = season.show_id
                 episode.season_id = season.season_id
                 prefix = ''
-                postfix= '?g=DRIEGSYPNOBI&hdcore=3.6.0&plugin=aasp-3.6.0.50.41'
-                if('http' not in episodeData['embed_info']):
+                video_type = episodeData['video_type']
+                postfix= 'g=DRIEGSYPNOBI&hdcore=3.6.0&plugin=aasp-3.6.0.50.41'
+                #xbmcgui.Dialog().ok('VVVVID.it',video_type)
+                if video_type == ENC_TYPE:
                     episode.stream_type = F4M_TYPE
-                    prefix = 'http://wowzaondemand.top-ix.org/videomg/_definst_/mp4:'
-                    postfix = '/manifest.f4m'
-                if('.m3u' in episodeData['embed_info']):
-                    episode.stream_type = M3U_TYPE
-                    prefix = ''
-                    postfix = ''
-                '''
-                try:
-                    prefix = 'http://194.116.73.48/videomg/_definst_/mp4:'
-                    postfix = '/manifest.f4m'
+                    episode.manifest = STREAM_HTTP+embed_info+postfix
+                elif video_type == KENC_TYPE:
                     episode.stream_type = F4M_TYPE
-                    episode.manifest = prefix + ((episodeData['thumbnail'].replace('https://static.vvvvid.it/img/thumbs/','')).replace('-t.jpg','.mp4/'))+postfix
-                    urllib2.urlopen(episode.manifest)
-                except urllib2.HTTPError, e:
-                    try:
-                        prefix = 'http://vvvvid-vh.akamaihd.net/z/'
-                        postfix = '/manifest.f4m?g=DRIEGSYPNOBI&hdcore=3.6.0&plugin=aasp-3.6.0.50.41'
-                        episode.stream_type = F4M_TYPE
-                        episode.manifest = prefix + ((episodeData['thumbnail'].replace('https://static.vvvvid.it/img/thumbs/','')).replace('-t.jpg','.mp4/'))+postfix
-                        urllib2.urlopen(episode.manifest)
-                    except urllib2.HTTPError, e1:
-                        postfix = '/manifest.f4m?g=DRIEGSYPNOBI&hdcore=3.6.0&plugin=aasp-3.6.0.50.41'
-                        response = request.get('http://vvvvid-vh.akamaihd.net/crossdomain.xml')
-                        plugin = Plugin();plugin.log.error("cookie: "+response.text)
-                        xbmcgui.Dialog().ok('VVVVID.it','Impossibile riprodurre il flusso video')
-                        sys.exit(0)
-                '''
+                    response = getJsonDataFromUrl(VVVVID_KENC_SERVER+'&url='+urllib.quote_plus(embed_info))
+                    message = json.loads(response.read().decode(response.info().getparam('charset') or 'utf-8'))
+                    embed_info_plus = dec_ei(message['message'])#;xbmcgui.Dialog().ok('VVVVID.it',embed_info_plus)
+                    episode.manifest = embed_info+'?'+embed_info_plus+'&'+postfix
+                elif video_type == VVVVID_TYPE:
+                    episode.stream_type = F4M_TYPE
+                    episode.manifest = STREAM_HTTP+embed_info+'/manifest.f4m'
+                else:
+                    episode.stream_type = F4M_TYPE
+                    episode.manifest = embed_info+'?'+postfix
+                plugin = Plugin();plugin.log.error('manifest: '+ episode.manifest)
                 #plugin = Plugin();plugin.log.error('manifest: '+ episode.manifest)
-                episode.manifest = prefix +  episodeData['embed_info'] + postfix
+                #episode.manifest = prefix +  episodeData['embed_info'] + postfix
                 episode.title = ((episodeData['number'] + ' - ' + episodeData['title'])).encode('utf-8','replace')
                 episode.thumb = episodeData['thumbnail']
                 listEpisode.append(episode)
