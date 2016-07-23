@@ -647,20 +647,24 @@ if __name__ == '__main__':
     else:
         cookie = None
     req = urllib2.Request('http://www.vvvvid.it/user/login')
-    req.add_header('User-Agent', 'Mozilla/5.0 (Windows; U; Windows NT 5.1; en-GB; rv:1.8.1.14) Gecko/20080404 Firefox/2.0.0.14')
-    req.add_header('Cookie',cookie)
+    req.add_header('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/52.0.2743.82 Safari/537.36')
+    if cookie:
+        req.add_header('Cookie',cookie)
     response = urllib2.urlopen(req)
     data = json.loads(response.read().decode(response.info().getparam('charset') or 'utf-8'))
     #plugin.log.error('output:'+ str(data))
     if data['result'] != 'ok':
-        post_data = urllib.urlencode({'action':'login','email':plugin.get_setting('username'),'password':plugin.get_setting('password'),'login_type':'force'})
+        post_data = urllib.urlencode({u'action':u'login',u'email':plugin.get_setting('username'),u'password':plugin.get_setting('password'),u'login_type':u'force'})
         req.add_data(post_data)
         response = urllib2.urlopen(req)
         data = json.loads(response.read().decode(response.info().getparam('charset') or 'utf-8'))
         #plugin.log.error('output:'+ str(data))
+        if data['result'] != 'first' and data['result'] !='ok':
+            xbmcgui.Dialog().ok('VVVVID.it','Impossibile eseguire login')
+            sys.exit(0)
         data_storage['conn_id'] = data['data']['conn_id']
-        data_storage['cookie'] = response.info()['Set-Cookie']
-        #sys.exit(0)
+        if 'set-cookie' in response.info().keys():
+            data_storage['cookie'] = response.info()['Set-Cookie']
     else:
         data_storage['conn_id'] = data['data']['conn_id']
         #plugin.log.error('output: non devo loggare')
