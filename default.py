@@ -652,13 +652,13 @@ if __name__ == '__main__':
         req.add_header('Cookie',cookie)
     response = urllib2.urlopen(req)
     data = json.loads(response.read().decode(response.info().getparam('charset') or 'utf-8'))
-    #plugin.log.error('output:'+ str(data))
+    plugin.log.error('check login:'+ str(data))
     if data['result'] != 'ok':
-        post_data = urllib.urlencode({u'action':u'login',u'email':plugin.get_setting('username'),u'password':plugin.get_setting('password'),u'login_type':u'force'})
+        post_data = urllib.urlencode({u'action':u'login',u'email':plugin.get_setting('username'),u'password':plugin.get_setting('password'),u'login_type':u'force','reminder':'true'})
         req.add_data(post_data)
         response = urllib2.urlopen(req)
         data = json.loads(response.read().decode(response.info().getparam('charset') or 'utf-8'))
-        #plugin.log.error('output:'+ str(data))
+        plugin.log.error('output:'+ str(data))
         if data['result'] != 'first' and data['result'] !='ok':
             xbmcgui.Dialog().ok('VVVVID.it','Impossibile eseguire login')
             sys.exit(0)
