@@ -3,7 +3,6 @@ XBMCLocalProxy 0.1
 Copyright 2011 Torben Gerkensmeyer
  
 Modified for F4M format by Shani
-Modified for metadata handling by Evilsephiroth
  
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -33,9 +32,7 @@ from SocketServer import ThreadingMixIn
 from BaseHTTPServer import HTTPServer, BaseHTTPRequestHandler
 from urllib import *
 import urlparse
-from f4mDownloader import F4MDownloader
-from interalSimpleDownloader import interalSimpleDownloader
-from hlsDownloader import HLSDownloader
+
 import xbmc
 import thread
 import zlib
@@ -49,20 +46,22 @@ import xbmc
 import hashlib
 g_stopEvent=None
 g_downloader=None
-
+g_currentprocessor=None
 class MyHandler(BaseHTTPRequestHandler):
     """
    Serves a HEAD request
    """
     def do_HEAD(self):
-        self.send_response(200)
         print "XBMCLocalProxy: Serving HEAD request..."
+        #
+        self.send_response(200)
         rtype="flv-application/octet-stream"  #default type could have gone to the server to get it.
+        #self.send_header("Accept-Ranges","bytes")
         self.send_header("Content-Type", rtype)
-        self.send_header("Accept-Ranges","bytes")
-        
         self.end_headers()
-
+        
+         
+        #s.answer_request(False)
     """
    Serves a GET request.
    """
@@ -73,11 +72,16 @@ class MyHandler(BaseHTTPRequestHandler):
     def answer_request(self, sendData):
         global g_stopEvent
         global g_downloader
+        global g_currentprocessor
+
+
         try:
 
             #Pull apart request path
-            request_path=self.path[1:]       
+            request_path=self.path[1:] 
+            querystring=request_path            
             request_path=re.sub(r"\?.*","",request_path)
+            
             #If a request to stop is sent, shut down the proxy
 
             if request_path.lower()=="stop":# all special web interfaces here
@@ -87,9 +91,21 @@ class MyHandler(BaseHTTPRequestHandler):
                 print 'dont have no icone here, may be in future'
                 self.wfile.close()
                 return
-
-
-            (url,proxy,use_proxy_for_chunks,maxbitrate,simpledownloader, auth,streamtype)=self.decode_url(request_path)
+            if request_path.lower()=="sendvideopart":
+                print 'dont have no icone here, may be in future'
+                #sendvideoparthere
+                self.send_response(200)
+                
+                rtype="video/mp2t"  #default type could have gone to the server to get it.
+                self.send_header("Content-Type", rtype)
+                self.end_headers()
+                initDone=True
+                videourl=self.decode_videoparturl(querystring.split('?')[1])
+                g_currentprocessor.sendVideoPart(videourl,self.wfile)
+                #self.wfile.close()
+                return
+            initDone=False
+            (url,proxy,use_proxy_for_chunks,maxbitrate,simpledownloader, auth,streamtype,swf ,callbackpath, callbackparam)=self.decode_url(request_path)
             print 'simpledownloaderxxxxxxxxxxxxxxx',simpledownloader
             if streamtype=='' or streamtype==None or streamtype=='none': streamtype='HDS'
             
@@ -101,98 +117,173 @@ class MyHandler(BaseHTTPRequestHandler):
                 #Send file request
                 #self.handle_send_request(download_id,file_url, file_name, requested_range,download_mode ,keep_file,connections)
                 
-                downloader=g_downloader
+                downloader=None
+                #downloader=g_downloader
                 
                 if not downloader or downloader.live==True or  not (downloader.init_done and downloader.init_url ==url):
+                    from f4mDownloader import F4MDownloader
                     downloader=F4MDownloader()
-                    if not downloader.init(self.wfile,url,proxy,use_proxy_for_chunks,g_stopEvent,maxbitrate,auth):
+                    if not downloader.init(self.wfile,url,proxy,use_proxy_for_chunks,g_stopEvent,maxbitrate,auth,swf):
                         print 'cannot init'
-                        return
+                        raise Exception('HDS.url failed to play\nServer down? check Url.')
                     g_downloader=downloader
                     print 'init...' 
                 
                 enableSeek=False
                 requested_range=self.headers.getheader("Range")
-                print 'requested Range',requested_range
                 if requested_range==None: requested_range=""
                 srange, erange=(None,None)
+                
+                
                             
                 if downloader.live==False and len(requested_range)>0 and not requested_range=="bytes=0-0": #we have to stream?
                     enableSeek=True
                     (srange, erange) = self.get_range_request(requested_range, downloader.total_frags)
                 
-                enableSeek=False
+
                 print 'PROXY DATA',downloader.live,enableSeek,requested_range,downloader.total_frags,srange, erange
-                framgementToSend = 1
-                for currentFreg in range(len(downloader.fragments_list) - 1,-1,-1):
-                    frag = downloader.fragments_list[currentFreg]
-                    if(frag[4] <= srange):
-                        framgementToSend=frag[1]
-                        fragment_size = frag[3]
-                        break
-                #enableSeek = False
-                downloader.statusStream = 'seeking'
+                enableSeek=False ##disabled for time being, couldn't find better way to handle
+                
+                framgementToSend=0
+                inflate=1815002#(6526684-466/3)#*373/downloader.total_frags# 4142*1024*243/8/40 #1#1024*1024
                 if enableSeek:
-                    self.send_response(206)  
+                    #rtype="video/x-flv" #just as default
+                    self.send_response(206)
                     rtype="flv-application/octet-stream"  #default type could have gone to the server to get it.
                     self.send_header("Content-Type", rtype)
-                    self.send_header("Last-Modified","Wed, 21 Feb 2014 08:43:39 GMT")
+                    self.send_header("Accept-Ranges","bytes")
+                    print 'not LIVE,enable seek',downloader.total_frags
+                    
+                    totalsize=downloader.total_frags*inflate
+                    
+                    framgementToSend=1#downloader.total_frags
+                    erange=srange+framgementToSend*inflate
+                    if erange>=totalsize:
+                        erange=totalsize-1
+                    
+    #                crange="bytes "+str(srange)+"-" +str(int(downloader.total_frags-1))+"/"+str(downloader.total_frags)#recalculate crange based on srange, portionLen and content_size 
+    #                crange="bytes "+str(srange)+"-" +str(int(totalsize-1))+"/"+str(totalsize)#recalculate crange based on srange, portionLen and content_size 
+                    crange="bytes "+str(srange)+"-" +str(int(erange))+"/*"#+str(totalsize)#recalculate crange based on srange, portionLen and content_size 
+                    print srange/inflate,erange/inflate,totalsize/inflate
+                    self.send_header("Content-Length", str(totalsize))
+                    self.send_header("Content-Range",crange)
                     etag=self.generate_ETag(url)
                     self.send_header("ETag",etag)
-                    self.send_header("Accept-Ranges","bytes")
-                    print 'not LIVE,enable seek',downloader.total_frags 
-                    totalsize=int(downloader.total_size)
-                    erange=totalsize-1
-                    
-                    crange="bytes "+str(srange)+"-" +str(erange) + "/" + str(erange +1) 
-                    self.send_header("Content-Range",crange)
-                    self.send_header("Content-Disposition", "attachment")
-
-                    
                     print crange
+                    self.send_header("Last-Modified","Wed, 21 Feb 2000 08:43:39 GMT")
                     self.send_header("Cache-Control","public, must-revalidate")
                     self.send_header("Cache-Control","no-cache")
                     self.send_header("Pragma","no-cache")
                     self.send_header("features","seekable,stridable")
                     self.send_header("client-id","12345")
-                    self.send_header("Content-Length", str(totalsize - int(srange)))
-
-                    self.send_header("Connection", 'close')        
+                    self.send_header("Connection", 'close')
                 else:
                     self.send_response(200)
                     rtype="flv-application/octet-stream"  #default type could have gone to the server to get it.
                     self.send_header("Content-Type", rtype)
-                    srange=None   
+                    srange=None
+                    
+            elif streamtype=='SIMPLE' or simpledownloader :
+                from interalSimpleDownloader import interalSimpleDownloader
+                downloader=interalSimpleDownloader();
+                if not downloader.init(self.wfile,url,proxy,g_stopEvent,maxbitrate):
+                    print 'init throw error because init'#throw error because init
+                    raise Exception('SIMPLE.url failed to play\nServer down? check Url.')
+                srange,framgementToSend=(None,None)
+                self.send_response(200)
+                rtype="flv-application/octet-stream"  #default type could have gone to the server to get it.
+                self.send_header("Content-Type", rtype)
+                srange=None
+            elif streamtype=='TSDOWNLOADER':
+                from TSDownloader import TSDownloader
+                downloader=TSDownloader();
+                if not downloader.init(self.wfile,url,proxy,g_stopEvent,maxbitrate):
+                    print 'cannot init but will continue to play'
+                    raise Exception('TS.url failed to play\nServer down? check Url.')
+                    #return
+                srange,framgementToSend=(None,None)
+                self.send_response(200)
+                rtype="video/mp2t"  #default type could have gone to the server to get it.
+                self.send_header("Content-Type", rtype)
+                srange=None
+            elif streamtype=='HLS':
+                from hlsDownloader import HLSDownloader
+                downloader=HLSDownloader()
+                if not downloader.init(self.wfile,url,proxy,use_proxy_for_chunks,g_stopEvent,maxbitrate,auth):
+                    print 'cannot init'
+                    raise Exception('HLS.url failed to play\nServer down? check Url.')
+                    
+                srange,framgementToSend=(None,None)
+                self.send_response(200)
+                rtype="flv-application/octet-stream"  #default type could have gone to the server to get it.
+                self.send_header("Content-Type", rtype)
+                srange=None
+            elif streamtype=='HLSRETRY':
+                from HLSDownloaderRetry import HLSDownloaderRetry
+                downloader=HLSDownloaderRetry()
+                if not downloader.init(self.wfile,url,proxy,use_proxy_for_chunks,g_stopEvent,maxbitrate,auth , callbackpath, callbackparam):
+                    print 'cannot init'
+                    raise Exception('HLSR.url failed to play\nServer down? check Url.')
+                    
+                srange,framgementToSend=(None,None)
+                self.send_response(200)
+                rtype="flv-application/octet-stream"  #default type could have gone to the server to get it.
+                self.send_header("Content-Type", rtype)
+                srange=None            
+            elif streamtype=='HLSREDIR':
+                from HLSRedirector import HLSRedirector
+                downloader=HLSRedirector()
+                g_currentprocessor=downloader
+                if not downloader.init(self.wfile,url,proxy,use_proxy_for_chunks,g_stopEvent,maxbitrate,auth , callbackpath, callbackparam):
+                    print 'cannot init'
+                    raise Exception('HLSR.url failed to play\nServer down? check Url.')
+                    
+                srange,framgementToSend=(None,None)
+                self.send_response(200)
+                rtype="application/vnd.apple.mpegurl"  #default type could have gone to the server to get it.
+                self.send_header("Content-Type", rtype)
+
                
-
-            self.end_headers()
-            #if not srange==None:
-             #   srange=srange/inflate
-             
-            if sendData:
-                startRangeParam = 0
-                if(srange != None):
-                    startRangeParam = int(srange)
-                #downloader.keep_sending_video(self.wfile,framgementToSend,0,startRangeParam)
-                #runningthread=thread.start_new_thread(downloader.download,(self.wfile,url,proxy,use_proxy_for_chunks,))
-                runningthread=thread.start_new_thread(downloader.keep_sending_video(self.wfile,framgementToSend,0,startRangeParam))
+                srange=None            
                 
-                xbmc.sleep(500)
-                while not downloader.status=="finished":
-                    xbmc.sleep(200);
+            #rtype="flv-application/octet-stream"  #default type could have gone to the server to get it. 
+            #self.send_header("Content-Type", rtype)    
+               
+            self.end_headers()
+            if not srange==None:
+                srange=srange/inflate
+            initDone=True
+            if sendData:
+                downloader.keep_sending_video(self.wfile,srange,framgementToSend)
+                #self.wfile.close()
+                #runningthread=thread.start_new_thread(downloader.download,(self.wfile,url,proxy,use_proxy_for_chunks,))
+                print 'srange,framgementToSend',srange,framgementToSend
+                #runningthread=thread.start_new_thread(downloader.keep_sending_video,(self.wfile,srange,framgementToSend,))
+                
+                #xbmc.sleep(500)
+                #while not downloader.status=="finished":
+                #    xbmc.sleep(200);
 
 
-        except:
+        except Exception as inst:
             #Print out a stack trace
             traceback.print_exc()
-            g_stopEvent.set()
-            self.send_response(404)
+            #g_stopEvent.set()
+            if not initDone:
+                xbmc.executebuiltin("XBMC.Notification(VVVVID.it,%s,4000,'')"%inst.message)
+                self.send_error(404)
+            #print 'sending 404'
+            
+            #self.send_error(404)
+            
             #Close output stream file
-            self.wfile.close()
-            return
+            #self.wfile.close()
+            print 'closed'
+            
 
         #Close output stream file
-        self.wfile.close()
+        #self.wfile.close()
+        self.finish()
         return 
    
     def generate_ETag(self, url):
@@ -220,13 +311,20 @@ class MyHandler(BaseHTTPRequestHandler):
                 srange=0
                 erange=int(file_size-1);
         return (srange, erange)
+
+    def decode_videoparturl(self, url):
+        print 'in params',url
+        params=urlparse.parse_qs(url)
+        received_url = params['url'][0].replace('\r','')
+        return received_url
         
     def decode_url(self, url):
-        print 'in params'
+        print 'in params',url
         params=urlparse.parse_qs(url)
         print 'params',params # TODO read all params
         #({'url': url, 'downloadmode': downloadmode, 'keep_file':keep_file,'connections':connections})
-        received_url = params['url'][0]#
+        received_url = params['url'][0].replace('\r','')#
+        print 'received_url',received_url
         use_proxy_for_chunks =False
         proxy=None
         try:
@@ -264,7 +362,23 @@ class MyHandler(BaseHTTPRequestHandler):
             streamtype =  params['streamtype'][0]#            
         except: pass 
         if streamtype=='None' and streamtype=='': streamtype='HDS'
-        return (received_url,proxy,use_proxy_for_chunks,maxbitrate,simpledownloader,auth,streamtype)   
+
+        swf=None
+        try:
+            swf = params['swf'][0]
+        except: pass        
+        callbackpath=""
+        try:
+            callbackpath = params['callbackpath'][0]
+        except: pass        
+
+        callbackparam=None
+        try:
+            callbackparam = params['callbackparam'][0]
+        except: pass                
+        
+     
+        return (received_url,proxy,use_proxy_for_chunks,maxbitrate,simpledownloader,auth,streamtype,swf ,callbackpath, callbackparam )   
     """
    Sends the requested file and add additional headers.
    """
@@ -280,23 +394,16 @@ class Server(HTTPServer):
         while result is None:
             try:
                 result = self.socket.accept()
-                print 'getSocket'
             except socket.timeout:
                 pass
-                print 'waitSocketTimeout'
-                xbmc.sleep(5000)
         result[0].settimeout(1000)
         return result
  
-def server_bind(self):
-    HTTPServer.server_bind(self)
-    self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    
 class ThreadedHTTPServer(ThreadingMixIn, Server):
     """Handle requests in a separate thread."""
  
 HOST_NAME = '127.0.0.1'
-PORT_NUMBER = 50000
+PORT_NUMBER = 55333
 
 class f4mProxy():
 
@@ -317,65 +424,77 @@ class f4mProxy():
             httpd.handle_request()
         httpd.server_close()
         print "XBMCLocalProxy Stops %s:%s" % (HOST_NAME, port)
-    def prepare_url(self,url,proxy=None, use_proxy_for_chunks=True,port=PORT_NUMBER, maxbitrate=0,simpleDownloader=False,auth=None, streamtype='HDS'):
+    def prepare_url(self,url,proxy=None, use_proxy_for_chunks=True,port=PORT_NUMBER, maxbitrate=0,simpleDownloader=False,auth=None, streamtype='HDS',swf=None, callbackpath="",callbackparam=""):
         global PORT_NUMBER
         global PORT_NUMBER
-        newurl=urllib.urlencode({'url': url})
+        newurl=urllib.urlencode({'url': url,'proxy':proxy,'use_proxy_for_chunks':use_proxy_for_chunks,'maxbitrate':maxbitrate,'simpledownloader':simpleDownloader,'auth':auth,'streamtype':streamtype,'swf':swf,'callbackpath':callbackpath , 'callbackparam':callbackparam})
         link = 'http://'+HOST_NAME+(':%s/'%str(port)) + newurl
         return (link) #make a url that caller then call load into player
 
 class f4mProxyHelper():
 
-    def playF4mLink(self,url,name,proxy=None,use_proxy_for_chunks=False, maxbitrate=0, simpleDownloader=False, auth=None, streamtype='HDS',setResolved=False):
-        print "URL: " + url
-        REMOTE_DBG = False 
+    def playF4mLink(self,url,name,proxy=None,use_proxy_for_chunks=False, maxbitrate=0, simpleDownloader=False, auth=None, streamtype='HDS',setResolved=False,swf=None , callbackpath="",callbackparam="", iconImage="DefaultVideo.png"):
+        try:
+            print "URL: " + url
+            stopPlaying=threading.Event()
+            progress = xbmcgui.DialogProgress()
+            import checkbad
+            checkbad.do_block_check(False)
 
-        # append pydev remote debugger
-        if REMOTE_DBG:
-            # Make pydev debugger works for auto reload.
-            # Note pydevd module need to be copied in XBMC\system\python\Lib\pysrc
+            
+            f4m_proxy=f4mProxy()
+            stopPlaying.clear()
+            runningthread=thread.start_new_thread(f4m_proxy.start,(stopPlaying,))
+            progress.create('Starting local proxy')
+            stream_delay = 1
+            progress.update( 20, "", 'Loading local proxy', "" )
+            xbmc.sleep(stream_delay*1000)
+            progress.update( 100, "", 'Loading local proxy', "" )
+            url_to_play=f4m_proxy.prepare_url(url,proxy,use_proxy_for_chunks,maxbitrate=maxbitrate,simpleDownloader=simpleDownloader,auth=auth, streamtype=streamtype, swf=swf , callbackpath=callbackpath,callbackparam=callbackparam)
+            listitem = xbmcgui.ListItem(name,path=url_to_play, iconImage=iconImage, thumbnailImage=iconImage)
+            
+            listitem.setInfo('video', {'Title': name})
             try:
-                sys.path.append("/Users/evilsephiroth/eclipsePython/plugins/org.python.pydev_3.9.2.201502050007/pysrc")
-                import pydevd # with the addon script.module.pydevd, only use `import pydevd`
-                # stdoutToServer and stderrToServer redirect stdout and stderr to eclipse console
-                pydevd.settrace('localhost', stdoutToServer=True, stderrToServer=True)
-            except ImportError:
-                sys.stderr.write("Error: " + "You must add org.python.pydev.debug.pysrc to your PYTHONPATH.")
-                sys.exit(1)
-        
-        stopPlaying=threading.Event()
-        progress = xbmcgui.DialogProgress()
-        f4m_proxy=f4mProxy()
-        stopPlaying.clear()
-        runningthread=thread.start_new_thread(f4m_proxy.start,(stopPlaying,))
-        progress.create('Starting local proxy')
-        stream_delay = 1
-        progress.update( 20, "", 'Loading local proxy', "" )
-        xbmc.sleep(stream_delay*1000)
-        progress.update( 100, "", 'Loading local proxy', "" )
-        url_to_play=f4m_proxy.prepare_url(url,proxy,use_proxy_for_chunks,maxbitrate=maxbitrate,simpleDownloader=simpleDownloader,auth=auth, streamtype=streamtype)
-        listitem = xbmcgui.ListItem(name,path=url_to_play)
-        listitem.setInfo('video', {'Title': name})
+                if streamtype==None or streamtype=='' or streamtype in ['HDS'  'HLS','HLSRETRY']:
+                    listitem.setMimeType("flv-application/octet-stream");
+                    listitem.setContentLookup(False)
+                elif streamtype in ('TSDOWNLOADER'):
+                    listitem.setMimeType("video/mp2t");
+                    listitem.setContentLookup(False)
+                elif streamtype in ['HLSREDIR']:
+                    listitem.setMimeType("application/vnd.apple.mpegurl");
+                    listitem.setContentLookup(False) 
+            except: print 'error while setting setMimeType, so ignoring it '
+                
 
-        if setResolved:
-            return url_to_play, listitem
-        mplayer = MyPlayer()    
-        mplayer.stopPlaying = stopPlaying
-        progress.close() 
-        mplayer.play(url_to_play,listitem)
-       
-        #xbmc.Player(xbmc.PLAYER_CORE_AUTO).play(url, listitem)
-        firstTime=True
-        while True:
-            if stopPlaying.isSet():
-                break;
-            xbmc.log('Sleeping...')
-            xbmc.sleep(200)
-        stopPlaying.isSet()
+            if setResolved:
+                return url_to_play, listitem
+            mplayer = MyPlayer()    
+            mplayer.stopPlaying = stopPlaying
+            progress.close() 
+            mplayer.play(url_to_play,listitem)
+           
+            #xbmc.Player().play(url, listitem)
+            firstTime=True
+            played=False
+            while True:
+                if stopPlaying.isSet():
+                    break;
+                if xbmc.Player().isPlaying():
+                    played=True
+                xbmc.log('Sleeping...')
+                xbmc.sleep(200)
+                #if firstTime:
+                #    xbmc.executebuiltin('Dialog.Close(all,True)')
+                #    firstTime=False
+            #stopPlaying.isSet()
 
-        return
+            print 'Job done'
+            return played
+        except: return False
+
         
-    def start_proxy(self,url,name,proxy=None,use_proxy_for_chunks=False, maxbitrate=0,simpleDownloader=False,auth=None,streamtype='HDS'):
+    def start_proxy(self,url,name,proxy=None,use_proxy_for_chunks=False, maxbitrate=0,simpleDownloader=False,auth=None,streamtype='HDS',swf=None, callbackpath="",callbackparam=""):
         print "URL: " + url
         stopPlaying=threading.Event()
         f4m_proxy=f4mProxy()
@@ -383,7 +502,7 @@ class f4mProxyHelper():
         runningthread=thread.start_new_thread(f4m_proxy.start,(stopPlaying,))
         stream_delay = 1
         xbmc.sleep(stream_delay*1000)
-        url_to_play=f4m_proxy.prepare_url(url,proxy,use_proxy_for_chunks,maxbitrate=maxbitrate,simpleDownloader=simpleDownloader,auth=auth,streamtype=streamtype)
+        url_to_play=f4m_proxy.prepare_url(url,proxy,use_proxy_for_chunks,maxbitrate=maxbitrate,simpleDownloader=simpleDownloader,auth=auth,streamtype=streamtype,swf=swf ,callbackpath=callbackpath,callbackparam=callbackparam)
         return url_to_play, stopPlaying
 
 
@@ -395,7 +514,7 @@ class MyPlayer (xbmc.Player):
     def play(self, url, listitem):
         print 'Now im playing... %s' % url
         self.stopPlaying.clear()
-        xbmc.Player(xbmc.PLAYER_CORE_AUTO ).play(url, listitem)
+        xbmc.Player( ).play(url, listitem)
         
     def onPlayBackEnded( self ):
         # Will be called when xbmc stops playing a file
@@ -407,9 +526,6 @@ class MyPlayer (xbmc.Player):
         print "seting event in onPlayBackStopped " 
         self.stopPlaying.set();
         print "stop Event is SET" 
-    def seekTime(self, pTime):
-        xbmc.Player.seekTime(self, pTime)
-     
 
 
             

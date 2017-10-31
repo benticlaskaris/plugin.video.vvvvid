@@ -135,7 +135,7 @@ class interalSimpleDownloader():
         return False
      
         
-    def keep_sending_video(self,dest_stream, segmentToStart=None, totalSegmentToSend=0,startRange = 0):
+    def keep_sending_video(self,dest_stream, segmentToStart=None, totalSegmentToSend=0):
         try:
             self.status='download Starting'
             self.downloadInternal(self.url,dest_stream)

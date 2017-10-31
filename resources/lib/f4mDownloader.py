@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import xml.etree.ElementTree as etree
 import base64
 from struct import unpack, pack
@@ -19,10 +20,19 @@ import binascii
 import zlib
 from hashlib import sha256
 import cookielib
+import akhds
+
 #import youtube_dl
 #from youtube_dl.utils import *
-addon_id = 'plugin.video.vvvvid'
-selfAddon = xbmcaddon.Addon(id=addon_id)
+
+try:
+    addon_id = 'plugin.video.vvvvid' # yes its a wrong one but due to settings getting reset
+    selfAddon = xbmcaddon.Addon(id=addon_id)
+except:
+    addon_id = 'plugin.video.vvvvid' # yes its a wrong one but due to settings getting reset
+    selfAddon = xbmcaddon.Addon(id=addon_id)
+    
+    
 __addonname__   = selfAddon.getAddonInfo('name')
 __icon__        = selfAddon.getAddonInfo('icon')
 downloadPath   = xbmc.translatePath(selfAddon.getAddonInfo('profile'))#selfAddon["profile"])
@@ -41,25 +51,7 @@ class FlvReader(io.BytesIO):
     Reader for Flv files
     The file format is documented in https://www.adobe.com/devnet/f4v.html
     """
-    indexString = 0
-    def read_metadata_filesize(self):
-        try:
-            indexString = self.getvalue().index('filesize')
-            self.read(indexString)
-            self.read_string()
-            return self.read_Number_to_double()
-        except:
-            return 0
-    def read_metadata_duration(self):
-        try:
-            indexString = self.getvalue().index('duration')
-            self.read(indexString)
-            self.read_string()
-            return self.read_Number_to_double()
-        except:
-            return 0
-    def read_Number_to_double(self):
-        return unpack('>d', self.read(8))[0]
+
     # Utility functions for reading numbers and strings
     def read_unsigned_long_long(self):
         return unpack('!Q', self.read(8))[0]
@@ -134,7 +126,6 @@ class FlvReader(io.BytesIO):
                               'duration': duration,
                               'discontinuity_indicator': discontinuity_indicator,
                               })
-            print 'fragments'
         #print 'fragments',fragments
         return {'version': version,
                 'time_scale': time_scale,
@@ -188,7 +179,7 @@ class FlvReader(io.BytesIO):
         return {'segments': segments,
                 'movie_identifier': movie_identifier,
                 'drm_data': drm_data,
-                'fragments': fragments
+                'fragments': fragments,
                 },islive
 
     def read_bootstrap_info(self):
@@ -205,11 +196,11 @@ class FlvReader(io.BytesIO):
 def read_bootstrap_info(bootstrap_bytes):
     return FlvReader(bootstrap_bytes).read_bootstrap_info()
 
-def build_fragments_list(boot_info,total_size,total_duration,startFromFregment=None, live=True):
+def build_fragments_list(boot_info, startFromFregment=None, live=True):
     """ Return a list of (segment, fragment) for each fragment in the video """
     res = []
     segment_run_table = boot_info['segments'][0]
-    #print 'segment_run_table',segment_run_table
+    print 'segment_run_table',segment_run_table
     # I've only found videos with one segment
     #if len(segment_run_table['segment_run'])>1:
     #    segment_run_table['segment_run']=segment_run_table['segment_run'][-2:] #pick latest
@@ -245,20 +236,23 @@ def build_fragments_list(boot_info,total_size,total_duration,startFromFregment=N
         if (not startFromFregment==None) and startFromFregment>=first_frag_number and startFromFregment<=frag_end:
             segment_to_start=current
         first_frag_number+=fregCount
+#    print 'current status',segment_run_table['segment_run']
     #if we have no index then take the last segment
     if segment_to_start==None:
         segment_to_start=len(segment_run_table['segment_run'])-1
         #if len(segment_run_table['segment_run'])>2:
         #    segment_to_start=len(segment_run_table['segment_run'])-2;
         if live:
-            if len(boot_info['fragments'][0]['fragments'])>1: #go bit back
-                startFromFregment= boot_info['fragments'][0]['fragments'][-1]['first']
+            startFromFregment=segment_run_table['segment_run'][-1][3]
+#            if len(boot_info['fragments'][0]['fragments'])>1: #go bit back
+#               startFromFregment= boot_info['fragments'][0]['fragments'][-1]['first']
+
         else:
             startFromFregment= boot_info['fragments'][0]['fragments'][0]['first'] #start from begining
             
         #if len(boot_info['fragments'][0]['fragments'])>2: #go little bit back
         #    startFromFregment= boot_info['fragments'][0]['fragments'][-2]['first']
-        
+    #print 'startFromFregment',startFromFregment,boot_info,len(boot_info['fragments'][0]['fragments'])
     #print 'segment_to_start',segment_to_start
     for currentIndex in range (segment_to_start,len(segment_run_table['segment_run'])):
         currentSegment=segment_run_table['segment_run'][currentIndex]
@@ -268,25 +262,38 @@ def build_fragments_list(boot_info,total_size,total_duration,startFromFregment=N
         if (not startFromFregment==None) and startFromFregment>=frag_start and startFromFregment<=frag_end:
             frag_start=startFromFregment
         #print 'frag_start',frag_start,frag_end
-        #custom ordering for byte and duration calculus
-        fragmentsSorted = boot_info['fragments'][0]['fragments']
-        fragmentsSorted.sort(key=lambda frag: frag['first'],reverse = True)
-        indexFragSorted = 0
-        startByte = total_size
-        fragSize = 0
-        startDuration = fragmentsSorted[0]['duration']
-        totalSizeCheck = 0
-        fragmentsSorted =  [frag for frag in fragmentsSorted if frag['duration'] != 0 and frag['first'] != 0]
-        for currentFreg in range(frag_end,frag_start-1,-1):
-            startDuration = fragmentsSorted[indexFragSorted]['duration']
-            fragSize = (total_size * startDuration) / (total_duration * 1000)
-            startByte = startByte - fragSize
-            if(fragmentsSorted[indexFragSorted]['first'] == currentFreg):
-                indexFragSorted += 1
-            res.append((seg,currentFreg,startDuration,fragSize,(startByte, 0)[bool(startByte<0)]))
-            totalSizeCheck += fragSize
-        res.sort(key = lambda frag:(frag[0],frag[1]))
+        for currentFreg in range(frag_start,frag_end+1):
+             res.append((seg,currentFreg ))
+#    print 'fragmentlist',res,boot_info
     return res
+
+    
+    #totalFrags=sum(j for i, j in segment_run_table['segment_run'])
+    #lastSegment=segment_run_table['segment_run'][-1]
+    #lastSegmentStart= lastSegment[0]
+    #lastSegmentFragCount = lastSegment[1]
+    #print 'totalFrags',totalFrags
+    
+    #first_frag_number = frag_start[0]['first']
+    #startFragOfLastSegment= first_frag_number +totalFrags - lastSegmentFragCount
+    
+    #for (i, frag_number) in zip(range(1, lastSegmentFragCount+1), itertools.count(startFragOfLastSegment)):
+    #    res.append((lastSegmentStart,frag_number )) #this was i, i am using first segement start
+    #return res
+    
+    #segment_run_entry = segment_run_table['segment_run'][0]
+    #print 'segment_run_entry',segment_run_entry,segment_run_table
+    #n_frags = segment_run_entry[1]
+    #startingPoint = segment_run_entry[0]
+    #fragment_run_entry_table = boot_info['fragments'][0]['fragments']
+    #frag_entry_index = 0
+    #first_frag_number = fragment_run_entry_table[0]['first']
+
+    #first_frag_number=(startingPoint*n_frags) -(n_frags)+1
+    #print 'THENUMBERS',startingPoint,n_frags,first_frag_number
+    #for (i, frag_number) in zip(range(1, n_frags+1), itertools.count(first_frag_number)):
+    #    res.append((startingPoint,frag_number )) #this was i, i am using first segement start
+    #return res
 
 def join(base,url):
     join = urlparse.urljoin(base,url)
@@ -320,12 +327,10 @@ class F4MDownloader():
         try:
             post=None
             print 'url',url
-            url = urllib.quote(url, safe=":/&=?")
-            print 'urlafter',url
             
-            openner = urllib2.build_opener(urllib2.HTTPHandler, urllib2.HTTPSHandler)
-            #cookie_handler = urllib2.HTTPCookieProcessor(self.cookieJar)
-            #openner = urllib2.build_opener(cookie_handler, urllib2.HTTPBasicAuthHandler(), urllib2.HTTPHandler())
+            #openner = urllib2.build_opener(urllib2.HTTPHandler, urllib2.HTTPSHandler)
+            cookie_handler = urllib2.HTTPCookieProcessor(self.cookieJar)
+            openner = urllib2.build_opener(cookie_handler, urllib2.HTTPBasicAuthHandler(), urllib2.HTTPHandler())
 
             if post:
                 req = urllib2.Request(url, post)
@@ -340,7 +345,7 @@ class F4MDownloader():
                         ua_header=True
 
             if not ua_header:
-                req.add_header('User-Agent','Mozilla/5.0 (Windows NT 6.1; WOW64; rv:30.0) Gecko/20100101 Firefox/30.0')
+                req.add_header('User-Agent','Mozilla/5.0 (Windows NT 6.1; Win64; x64; Trident/7.0; rv:11.0) like Gecko')
             #response = urllib2.urlopen(req)
             if self.proxy and (  (not ischunkDownloading) or self.use_proxy_for_chunks ):
                 req.set_proxy(self.proxy, 'http')
@@ -354,6 +359,15 @@ class F4MDownloader():
             traceback.print_exc()
             return None
             
+    def _write_flv_header2(self, stream):
+        """Writes the FLV header and the metadata to stream"""
+        # FLV header
+        stream.write(b'FLV\x01')
+        stream.write(b'\x01')
+        stream.write(b'\x00\x00\x00\x09')
+        # FLV File body
+        stream.write(b'\x00\x00\x00\x09')
+
         
     def _write_flv_header(self, stream, metadata):
         """Writes the FLV header and the metadata to stream"""
@@ -372,24 +386,11 @@ class F4MDownloader():
         # All this magic numbers have been extracted from the output file
         # produced by AdobeHDS.php (https://github.com/K-S-V/Scripts)
             stream.write(b'\x00\x00\x01\x73')
-    
-    def _write_flv_header2(self, stream):
-        """Writes the FLV header and the metadata to stream"""
-        # FLV header
-        stream.write(b'FLV\x01')
-        stream.write(b'\x01')
-        stream.write(b'\x00\x00\x00\x09')
-        # FLV File body
-        stream.write(b'\x00\x00\x00\x09')
 
-    def init(self, out_stream, url, proxy=None,use_proxy_for_chunks=True,g_stopEvent=None, maxbitrate=0, auth=''):
+    def init(self, out_stream, url, proxy=None,use_proxy_for_chunks=True,g_stopEvent=None, maxbitrate=0, auth='',swf=None):
         try:
-            self.statusStream=''
             self.init_done=False
             self.total_frags=0
-            self.total_size=0
-            self.total_duration=0
-            self.fragments_list = []
             self.init_url=url
             self.clientHeader=None
             self.status='init'
@@ -413,6 +414,7 @@ class F4MDownloader():
                 print 'header recieved now url and headers are',url, self.clientHeader 
             self.status='init done'
             self.url=url
+            self.swf=swf
             #self.downloadInternal(  url)
             return self.preDownoload()
             
@@ -437,7 +439,6 @@ class F4MDownloader():
             try:
                 print manifest
             except: pass
-            
             self.status='manifest done'
             #self.report_destination(filename)
             #dl = ReallyQuietDownloader(self.ydl, {'continuedl': True, 'quiet': True, 'noprogress':True})
@@ -450,12 +451,13 @@ class F4MDownloader():
             self.auth20=''
             if auth_obj and len(auth_obj)>0:
                 self.auth20=auth_obj[0] #not doing anything for time being
-            print 'auth',self.auth,self.auth20
+            print 'auth got from xml',self.auth,self.auth20
             #quick for one example where the xml was wrong.
             if '\"bootstrapInfoId' in manifest:
                 manifest=manifest.replace('\"bootstrapInfoId','\" bootstrapInfoId')
 
             doc = etree.fromstring(manifest)
+            print doc
             
             # Added the-one 05082014
             # START
@@ -471,7 +473,6 @@ class F4MDownloader():
             try:
                 #formats = [(int(f.attrib.get('bitrate', -1)),f) for f in doc.findall(_add_ns('media'))]
                 formats=[]
-                duration  = 0
                 for f in doc.findall(_add_ns('media')):
                     vtype=f.attrib.get('type', '')
                     if f.attrib.get('type', '')=='video' or vtype=='' :
@@ -506,23 +507,10 @@ class F4MDownloader():
             try:
                 self.metadata = base64.b64decode(media.find(_add_ns('metadata')).text)
                 print 'metadata stream read done'#,media.find(_add_ns('metadata')).text
-                self.total_duration = FlvReader(self.metadata).read_metadata_duration()
-                if(self.total_duration == 0):
-                    total_duration_text = media.attrib['duration']
-                    self.total_duration = int(float(total_duration_text) * 1000)
-                    
-                self.total_size = FlvReader(self.metadata).read_metadata_filesize()
-                if(self.total_size == 0):
-                    self.total_size = (rate * int(self.total_duration ) * 1000) / 8 
-                print 'totalsize in bytes'
-                print self.total_size
-                print 'totalsize in megabytes'
-                print self.total_size / 1024 / 1024
-                print 'duration in seconds'
-                print self.total_duration
-                print 'duration in minutes'
-                print self.total_duration / 60
-            except:  traceback.print_exc()
+
+                #self._write_flv_header(dest_stream, metadata)
+                #dest_stream.flush()
+            except: pass
         
             # Modified the-one 05082014
             # START
@@ -561,15 +549,6 @@ class F4MDownloader():
                 try:
                     self.metadata = base64.b64decode(media.find(_add_ns('metadata')).text)
                     print 'metadata stream read done'
-                    readerDuration = FlvReader(self.metadata)
-                    self.total_duration = readerDuration.read_metadata_duration()
-                    if(self.total_duration == 0):
-                        total_duration_text = media.attrib['duration']
-                        self.total_duration = int(float(total_duration_text) * 1000)
-                    readerFile = FlvReader(self.metadata)
-                    self.total_size = readerFile.read_metadata_filesize()
-                    if(self.total_size == 0):
-                         self.total_size = (rate * int(self.total_duration) * 1000) / 8
                 except: pass
                 
                 try:
@@ -584,10 +563,12 @@ class F4MDownloader():
             except: bootStrapID='xx'
             #print 'mediaUrl',mediaUrl
             base_url = join(man_url,mediaUrl)#compat_urlparse.urljoin(man_url,media.attrib['url'])
+            keybase_url=join(man_url,'key_')
             if mediaUrl.endswith('/') and not base_url.endswith('/'):
                     base_url += '/'
 
             self.base_url=base_url
+            self.keybase_url=keybase_url
             bsArray=doc.findall(_add_ns('bootstrapInfo'))
             print 'bootStrapID',bootStrapID
             #bootStrapID='bootstrap_450'
@@ -628,6 +609,10 @@ class F4MDownloader():
                         if len(self.auth)>0:
                             bootstrapURL+='?'+self.auth
                             queryString=self.auth#self._pv_params('',self.auth20)#not in use
+                        elif len(self.auth20)>0:
+                            
+                            queryString=self._pv_params(self.swf,self.auth20)
+                            bootstrapURL+='?'+queryString
                 else:
                     print 'queryString!!',queryString
                     bootstrapURL = join(man_url,bootstrap.attrib['url'])+'?'+queryString
@@ -635,13 +620,16 @@ class F4MDownloader():
                         authval=self.auth#self._pv_params('',self.auth20)#not in use
                         bootstrapURL = join(man_url,bootstrap.attrib['url'])+'?'+authval
                         queryString=authval
-
+                    elif len(self.auth20)>0:
+                        authval=self._pv_params(self.swf,self.auth20)#requires swf param
+                        bootstrapURL = join(man_url,bootstrap.attrib['url'])+'?'+authval
+                        queryString=authval
+                        
             print 'bootstrapURL',bootstrapURL
             if queryString==None:
                 queryString=''
             self.bootstrapURL=bootstrapURL
             self.queryString=queryString
-            print 'arrivato'
             self.bootstrap, self.boot_info, self.fragments_list,self.total_frags=self.readBootStrapInfo(bootstrapURL,bootstrapData)
             self.init_done=True
             return True
@@ -649,31 +637,130 @@ class F4MDownloader():
             traceback.print_exc()
         return False
 
+    def readAKKey(self, data):
+        messageKeyExists=False
+        key=""
+        firstByte=ord(data[0])
+        pos=1
+        returnIV=None
+        if firstByte==12: #version12
+            pos+=4+4+2+1;
+#            print 'indeedddd',firstByte
+#            print 'data',repr(data)
+            messageByte=ord(data[pos])
+            pos+=1
+            messageKeyExists=(messageByte & 4) > 0;
+            messageIV=(messageByte & 2) > 0;
+            if messageIV:
+               pos+=16
+#               print 'IV exists'
+            if messageKeyExists:
+#                print 'Message Key exists!!!'
+                returnIV=data[pos-16:pos]
+                d = str(data[pos]);
+                pos+=1
+                key = d;
+                while(d != '\x00'):
+                    d = str(data[pos]);
+                    pos+=1
+                    if d != '\x00':
+                        key+= d;
+        else:
+            print 'SOMETHING WRONG.... got other than 12'
+            print 1/0#shouldn't come where
+        return messageKeyExists, key,pos,returnIV
+    def getFrames(self,box_data, remainingdata):
+        frames=[]
+        KeepProcessing = False;
+        currentStep= 0;
+        tagLen = 0;
+        if(box_data):
+            if remainingdata and len(remainingdata)>0:
+                box_data=remainingdata+box_data
+                remainingdata=None
+           
+        lookForTagStart = 0;
+        KeepProcessing = True;
+        while(KeepProcessing and lookForTagStart<len(box_data)):
+            currentStep = ord(box_data[lookForTagStart]);
+            tagLen = ord(box_data[lookForTagStart + 1]) << 16 | ord(box_data[lookForTagStart + 2]) << 8 | ord(box_data[lookForTagStart + 3]) & 255;
+
+                                
+            nextTag = lookForTagStart + 11 + tagLen + 4
+            if (nextTag > len(box_data) and currentStep > 0):
+                remainingdata = [];
+                remainingdata=box_data[lookForTagStart:]
+                KeepProcessing = False;
+          
+            elif (currentStep > 0):
+                chunk = []
+                chunk=box_data[lookForTagStart:lookForTagStart+tagLen + 11 + 4]
+                frames.append((1,chunk))
+           
+            elif (currentStep == 0):
+                KeepProcessing = False;
+            #if nextTag==len(box_data):
+            #    KeepProcessing=False
+           
+            #print nextTag, len(box_data)
+            lookForTagStart = nextTag;
+        return frames,remainingdata
+    
+#    #def AES(self,key):
+#        return Rijndael(key, keySize=16, blockSize=16, padding=padWithPadLen())
+
+#    def AES_CBC(self,key):
+#        return CBC(blockCipherInstance=AES(key))
         
-    def keep_sending_video(self,dest_stream, fragmentToStart=None, totalSegmentToSend=0,startRange=0):
+    def addBytesToOutput(self,prefix,data,post,segmentid,buffer):
+        dataLen=0
+        if data and len(data)>0:
+            dataLen=len(data)
+            #print 'Incomming',repr(prefix)
+            prefix=list(prefix)
+            prefix[3]=chr(dataLen & 255)
+            prefix[2]=chr(dataLen >> 8 & 255);
+            prefix[1]=chr(dataLen >> 16 & 255);
+            #print repr(prefix)
+            prefix=''.join(prefix)
+            #print repr(prefix)
+        #print len(prefix) 
+        finalArray=prefix
+        if data and len(data)>0:
+            finalArray+=data
+        if post and len(post):
+            finalArray+=post
+#        with open("c:\\temp\\myfile.mp4", 'a+b') as output:
+#            output.write(finalArray)
+        lenReturned=len(finalArray)
+        buffer.write(finalArray)
+        buffer.flush()
+        return lenReturned
+        
+    def keep_sending_video(self,dest_stream, segmentToStart=None, totalSegmentToSend=0):
         try:
-            self.status='download Starting'
-            self.downloadInternal(self.url,dest_stream,fragmentToStart,totalSegmentToSend,startRange)
+            self.status='download Starting'            
+            self.downloadInternal(self.url,dest_stream,segmentToStart,totalSegmentToSend)
         except: 
             traceback.print_exc()
+        try:
+            akhds.cleanup()                                    
+        except:pass
         self.status='finished'
             
-    def downloadInternal(self,url,dest_stream ,fragmentToStart=None,totalSegmentToSend=0,startRange = 0):
+    def downloadInternal(self,url,dest_stream ,segmentToStart=None,totalSegmentToSend=0):
         global F4Mversion
         try:
             #dest_stream =  self.out_stream
             queryString=self.queryString
-            print 'fragmentToStart',fragmentToStart
-            
-            print 'writing metadata'#,len(self.metadata)
-            if(fragmentToStart == 1 and self.statusStream == 'seeking'):
+            print 'segmentToStart',segmentToStart
+            if self.live or segmentToStart==0 or segmentToStart==None:
+                print 'writing metadata'#,len(self.metadata)
                 self._write_flv_header(dest_stream, self.metadata)
                 dest_stream.flush()
-            elif(fragmentToStart != 1 and self.statusStream == 'seeking'):
-                self._write_flv_header2(dest_stream)
-                dest_stream.flush()
-                
-           
+            #elif segmentToStart>0 and not self.live:
+            #    self._write_flv_header2(dest_stream)
+            #    dest_stream.flush()
             
             url=self.url
   
@@ -690,19 +777,42 @@ class F4MDownloader():
 
 
             frags_filenames = []
-            self.seqNumber=fragmentToStart -1
+            self.seqNumber=0
+            if segmentToStart and  not self.live :
+                self.seqNumber=segmentToStart
+                if   self.seqNumber>=total_frags:
+                    self.seqNumber=total_frags-1
+            #for (seg_i, frag_i) in fragments_list:
+            #for seqNumber in range(0,len(fragments_list)):
+            self.segmentAvailable=0
             frameSent=0
-            self.statusStream = 'play'
-            while (True and self.statusStream == 'play'):
-                    
-                if self.g_stopEvent and self.g_stopEvent.isSet():
+            keyValue=""
+            keyData=None
+            firstPacket=True
+            remainingFrameData=None
+            decrypter=None
+            errors=0
+            file=0
+            lastIV=None
+            AKSession=None
+            
+            while True:
+            
+                #if not self.live:
+                #    _write_flv_header2
+                try:    
+                    if self.g_stopEvent.isSet():
                         return
-                seg_i, frag_i,duration_i,size_i,start_byte_i=self.fragments_list[self.seqNumber]
+                except: pass
+                seg_i, frag_i=fragments_list[self.seqNumber]
                 self.seqNumber+=1
                 frameSent+=1
                 name = u'Seg%d-Frag%d' % (seg_i, frag_i)
                 #print 'base_url',base_url,name
+                if AKSession:
+                    name+=AKSession
                 url = self.base_url + name
+
                 if queryString and '?' not in url:
                     url+='?'+queryString
                 elif '?' in self.base_url:
@@ -725,27 +835,146 @@ class F4MDownloader():
                 if 1==1:
                     down_data = success#down.read()
                     reader = FlvReader(down_data)
-                    while (True and self.statusStream == 'play'):
+                    while True:
                         _, box_type, box_data = reader.read_box_info()
                         print  'box_type',box_type,len(box_data)
                         #if box_type == b'afra':
                         #    dest_stream.write(box_data)
                         #    dest_stream.flush()
                         #    break
-                        conditionOffset = False
-                        if((startRange == 0) or (startRange != 0 and (start_byte_i + len(box_data) >= startRange))):
-                            conditionOffset = True
-                        print 'conditionOffset',conditionOffset
-                        print 'startRangepassed',startRange
-                        if (box_type == b'mdat' ):
+                            
+                        if box_type == b'mdat':
                             isDrm=True if ord(box_data[0])&1 else False
-                            #print 'isDrm',isDrm,repr(box_data)
-                            if 1==2 and isDrm:
-                                print 'drm',repr(box_data[1:17])
-                                box_data=box_data[17:]
-                            dest_stream.write(box_data)
-                            dest_stream.flush()
-                            break
+                            boxlength=len(box_data)
+                            seglen=0
+                            file+=1
+#                            if file>6: print 1/0
+                            skip=False
+                            doDecrypt=False
+#                            print 'first byte',repr(box_data[0]),'kk'
+                            
+                            isAkamaiEncrypted=True if ord(box_data[0])==11 or ord(box_data[0])==10  else False
+                            if isAkamaiEncrypted:
+#                                print 'Total MDAT count',len(box_data), len(box_data)%16
+
+                                _loc8_ = ord(box_data[1]) << 16 | ord(box_data[2]) << 8 | ord(box_data[3]) & 255;
+                                _loc9_ = box_data[11:11+_loc8_]
+#                                print 'this is encrypted',len(_loc9_),_loc8_,repr(box_data[1:70])
+                                keyExists,Key,dataread,lastIV=self.readAKKey(_loc9_)
+                                if keyExists:
+#                                    print 'key exists and its len is ',_loc8_,repr(Key)
+                                    doDecrypt=True
+                                    keyValueNew=Key.split('key_')[1]
+#                                    print 'previous key is'+keyValue,'new key is',keyValueNew
+                                    if keyValue=="":
+                                        keyValue="_"+keyValueNew
+                                        AKSession=keyValue
+                                        keyurl = self.keybase_url +keyValueNew
+                                        
+                                        if queryString and '?' not in keyurl:
+                                            keyurl+='?'+queryString+'&guid=CHRLRCMRHGUD'
+                                        print 'the key url is ',keyurl,'thanks'
+                                        keyData=self.getUrl(keyurl,False)
+                                        skip=False
+                                        firstPacket=True
+                                        
+                                    elif not keyValue=="_"+keyValueNew:
+                                        keyValue="_"+keyValueNew#take new key
+                                        AKSession=keyValue
+                                        keyurl = self.keybase_url +keyValueNew
+                                        if queryString and '?' not in keyurl:
+                                            keyurl+='?'+queryString+'&guid=CHRLRCMRHGUD'
+                                        keyData=self.getUrl(keyurl,False)
+                                        firstPacket=True
+                                        #todo decryptit! and put it in box_data
+                            #print 'before skip'
+                            if skip:
+                                break;
+                            if keyData:
+#                                print 'key data is',repr(keyData),len(keyData)
+                                #do decrypt here. frame by frame
+                                #now generate frames
+                                #put remaining in remaining
+                                #for each frame decrypt and write and flush
+                                try:
+                                    frames=[]
+#                                    print 'before frames data', repr(box_data[0:70])
+                                    frames,remainingFrameData=self.getFrames(box_data,remainingFrameData)
+#                                    print 'after frames data first frame', repr(frames[0][0:70])
+                                    #print 'frames',frames
+                                    cleanup=False
+
+                                    for frame in frames:
+                                        
+                                        data=frame[1]                                            
+                                        datalen=ord(data[1]) << 16 | ord(data[2]) << 8 | ord(data[3]) & 255;
+                                        preFrame=len(data)
+                                        #print 'samp>',len(data),datalen,ord(data[0]) ,'<samp'
+                                        if firstPacket:
+                                            firstPacket=False
+#                                            data=data[0:datalen]
+                                            #print 'first>',len(data),ord(data[0]),datalen,'<first'
+#                                        else:
+                                        if 1==1:
+                                            #if not not key frame then decrypt else
+                                            firstByte=ord(data[0])
+                                            frameHeader=data[:11]
+                                            framePad=data[11 + datalen:11 + datalen+4];
+
+
+
+                                            if firstByte==10 or firstByte==11:
+
+                                                if firstByte==10: 
+                                                    frameHeader = list(frameHeader)
+                                                    frameHeader[0]=chr(8)
+                                                    frameHeader=''.join(frameHeader)
+                                                    
+                                                if firstByte==11: 
+                                                    frameHeader = list(frameHeader)
+                                                    frameHeader[0]=chr(9)
+                                                    frameHeader=''.join(frameHeader)
+                                                data=data[11:11+datalen]
+                                                #print 'sub>',len(data),firstByte,datalen,datalen%16,len(data)%16 ,'<sub'
+                                                keyExistsNew,KeyNew,dataread,ignoreIV=self.readAKKey(data)
+#                                                print 'dataread',dataread,keyExistsNew,KeyNew,ignoreIV
+
+                                                try:    
+                                                    akhds.init()
+                                                    data=akhds.tagDecrypt(data,keyData)
+                                                    
+
+                                                except:
+                                                    print 'decryption error'
+                                                    errors+=1
+                                                    traceback.print_exc()
+                                                    if errors>10: print 1/0
+                                                    
+                                                    
+#                                                print 'pre return size %d, %d %d'%(len(frameHeader),len(data), len(framePad))
+                                                seglen1=self.addBytesToOutput(frameHeader,data,framePad,1,dest_stream)
+                                                seglen+=seglen1
+#                                                print 'pre frame %d, after %d'%(preFrame,seglen1)
+                                            else:
+                                                print 'hmm no 10 or 11?'
+#                                                print 'pre return size %d, %d %d'%(len(frameHeader),len(data), len(framePad))
+                                                seglen1=self.addBytesToOutput(frameHeader,None,None,1,dest_stream)
+                                                seglen+=seglen1
+#                                                print 'pre frame %d, after %d'%(preFrame,seglen1)
+                                            #est_stream.write(data)
+                                            #dest_stream.flush()
+                                            #dest_stream.write(self.decryptData(data,keyData))
+                                            #dest_stream.flush() 
+                                except:
+                                    print traceback.print_exc()
+                                    self.g_stopEvent.set()     
+                                    
+
+                            else:
+                                dest_stream.write(box_data)
+                                dest_stream.flush()
+                            print 'box length is %d and seg total is %d'%(boxlength,seglen)
+                            break                            
                             # Using the following code may fix some videos, but 
                             # only in mplayer, VLC won't play the sound.
                             # mdat_reader = FlvReader(box_data)
@@ -758,7 +987,8 @@ class F4MDownloader():
                             # dest_stream.write(b'\x00')
                             # dest_stream.write(mdat_reader.read())
                             # break
-                if self.seqNumber==len(fragments_list):
+                self.status='play'
+                if self.seqNumber==len(fragments_list) or (totalSegmentToSend>0 and frameSent==totalSegmentToSend):
                     if not self.live:
                         break
                     self.seqNumber=0
@@ -791,12 +1021,17 @@ class F4MDownloader():
 
         try:
             retries=0
-            while retries<=5:
+            while retries<=10:
 
-                if self.g_stopEvent and self.g_stopEvent.isSet():
+                try:    
+                    if self.g_stopEvent.isSet():
+                        print 'event is set. returning'
                         return
-                if not bootStrapData:
+                except: pass
+
+                if bootStrapData==None:
                     bootStrapData =self.getUrl(bootstrapUrl)
+
                 if bootStrapData==None:
                     retries+=1
                     continue
@@ -808,7 +1043,7 @@ class F4MDownloader():
                 newFragement=None
                 if not lastFragement==None:
                     newFragement=lastFragement+1
-                fragments_list = build_fragments_list(boot_info,self.total_size,self.total_duration,newFragement,self.live)
+                fragments_list = build_fragments_list(boot_info,newFragement,self.live)
                 total_frags = len(fragments_list)
                 #print 'fragments_list',fragments_list, newFragement
                 #print lastSegment
@@ -833,57 +1068,86 @@ class F4MDownloader():
         Algorithm originally documented by KSV, source:
         http://stream-recorder.com/forum/showpost.php?p=43761&postcount=13
         """
-        pv="ZXhwPTE0MDYyODMxOTF+YWNsPSUyZip+ZGF0YT1wdmMsc35obWFjPTgwNTA0N2E1Yjk5ZmFjMjMzMDY0N2MxMzkyNGM0MDNiYzY1YjZmYzgyYTZhMjYyZDIxNDdkZTExZjI1MzQ5ZDI=;hdntl=exp=1406283191~acl=%2f*~data=hdntl~hmac=b65dc0c5ae60570f105984f0cc5ec6ce3a51422a7a1442e09f55513718ba80bf"
-        (data, hdntl) = pv.split(";")
-        SWF_VERIFICATION_KEY = b"Genuine Adobe Flash Player 001"
-        #SWF_VERIFICATION_KEY=binascii.unhexlify("9b673b13fa4682ed14c3cfa5af5310274b514c4133e9b3a81e6e3aba009l2564") 
-                               
-        SWF_VERIFICATION_KEY = binascii.unhexlify(b"BD938D5EE6D9F42016F9C56577B6FDCF415FE4B184932B785AB32BCADC9BB592")
-        swf = self.getUrl('http://www.wat.tv/images/v70/PlayerLite.swf',True)
-        #AKAMAIHD_PV_KEY = unhexlify(b"BD938D5EE6D9F42016F9C56577B6FDCF415FE4B184932B785AB32BCADC9BB592")
-        AKAMAIHD_PV_KEY = "9b673b13fa4682ed14c3cfa5af5310274b514c4133e9b3a81e6e3aba009l2564"
+        #return pv;
+        #pv="ZXhwPTE0NDAxNTUyODJ+YWNsPSUyZip+ZGF0YT1wdmMsc35obWFjPWMyZjk4MmVjZjFjODQyM2IzZDkxMzExMjNmY2ExN2U4Y2UwMjU4NWFhODg3MWFjYzM5YmI0MmVlNTYxYzM5ODc="
+#        pv="ZXhwPTE0NDAzMjc3ODF+YWNsPSUyZip+ZGF0YT1wdmMsc35obWFjPTYyYTE2MzU2MTNjZTI4ZWI2MTg0MmRjYjFlZTZlYTYwYTA5NWUzZDczNTQ5MTQ1ZDVkNTc0M2M2Njk5MDJjNjY="
+#        pv="ZXhwPTE0Mzk2MDgzMTl+YWNsPSUyZip+ZGF0YT1wdmMsc35obWFjPTExYTJiNzQ4NjQyYmY1M2VlNzk5MzhhNTMzNjc1MTAzZjk2NWViOGVhODY4MzUwODkwZGM1MjVmNjI3ODM4MzQ="
+            
+        try:
+            data, hdntl = pv.split(";")
+        except ValueError:
+            data = pv
+            hdntl = ""
+        print 'DATA IS',data
+        print 'hdntl IS',hdntl
+        if data=="": return hdntl
+        first_stage_msg=binascii.unhexlify('056377146640142763057567157640125041016376130175171220177717044510157134116364123221072012122137150351003442036164015632157517073355151142067436113220106435137171174171127530157325044270025004')
+        
+        first_stage_key=data
 
-        hash = hashlib.sha256()
-        hash.update(self.swfdecompress(swf))
-        hash = base64.b64encode(hash.digest()).decode("ascii")
+        hash_data=""
+        if pvswf is None:
+            print 'swf required for pv2 decryption'
+            pvswf=""
+
+        if pvswf.startswith('http'):
+            import hashlib            
+            h=hashlib.md5()
+            h.update(pvswf)
+            hashkey=""+str(h.hexdigest())
+            existinghash=str(selfAddon.getSetting(hashkey))
+            #print 'existinghash',hashkey
+            #print 'existinghashval',existinghash
+            if len(existinghash)==0:
+                swf = self.getUrl(pvswf,False)
+                hash = hashlib.sha256()
+                hash.update(self.swfdecompress(swf))
+                hash = base64.b64encode(hash.digest()).decode("ascii")
+                #print hashkey,hash
+                selfAddon.setSetting(hashkey, str(hash))
+                #print 'getting back',str(selfAddon.getSetting(hashkey))
+            else:
+                hash=existinghash
+                
+            
+        else:
+            hash=pvswf # the incoming is the hash!
+            
         print 'hash',hash
-        hash="96e4sdLWrezE46RaCBzzP43/LEM5en2KujAosbeDimQ="
-        print 'hash',hash
-        #data="ZXhwPTE0MDYyMDQ3NjB+YWNsPSUyZip+ZGF0YT1wdmMsc35obWFjPWEzMjBlZDI5YjI1MDkwN2ExODcyMTJlOWJjNGFlNGUzZjA3MTM3ODk1ZDk4NmI2ZDVkMzczNzNhYzNiNDgxOWU="
+          
+#        shouldhash="AFe6zmDCNudrcFNyePaAzAn/KRT5ES99ql4SNqldM2I="      
+#        if shouldhash==hash:
+#            print '**************HASH MATCH ********************'
+#        else:
+#            print '********* NOOOOOOOOOOOOOOOOOOOOTTTTTTTTTTTTTTTTT**********'
+            
+            
+        second_stage_key = hmac.new(first_stage_key,first_stage_msg , sha256).digest()
+#        second_stage_data=hash_data  #
+        second_stage_data=base64.b64decode( hash)
+        buffer="106,45,165,20,106,45,165,20,38,45,165,87,11,98,228,14,107,89,233,25,101,36,223,76,97,28,175,18,23,86,164,6,1,56,157,64,123,58,186,100,54,34,184,14,3,44,164,20,106,6,222,84,122,45,165,20,106,28,196,84,122,111,183,84,122,45,165,20,106,45,165,20,106,45,165,20,106,45,165,20,106,45,165,20,106,45,165,20,106,45,165,20,106,45,165,20" 
+        buffer=buffer.split(',');
+        second_stage_data+=chr(int(buffer[len(second_stage_data)]))
+#        print len(second_stage_data),repr(second_stage_data)
+
+        third_stage_key= hmac.new(second_stage_key, second_stage_data, sha256).digest()
+        
+
+        #hash=shouldhash
         msg = "exp=9999999999~acl=%2f%2a~data={0}!{1}".format(data, hash)
-        auth = hmac.new(AKAMAIHD_PV_KEY, msg.encode("ascii"), sha256)
+        
+        auth = hmac.new(third_stage_key, msg.encode("ascii"), sha256)
         pvtoken = "{0}~hmac={1}".format(msg, auth.hexdigest())
 
         # The "hdntl" parameter can be accepted as a cookie or passed in the
         # query string, but the "pvtoken" parameter can only be in the query
         # string
         print 'pvtoken',pvtoken
-
-
-        #return "pvtoken={}&{}".format(
-        #urlencode_param(pvtoken), urlencode_param(hdntl))
         
         params=urllib.urlencode({'pvtoken':pvtoken})+'&'+hdntl+'&hdcore=2.11.3'
-        #params='pvtoken=exp%3D9999999999%7Eacl%3D%252f%252a%7Edata%3DZXhwPTE0MDYwNDMzOTN+YWNsPSUyZip+ZGF0YT1wdmMsc35obWFjPWQxMTk0ZDc4NDExMDYwNjZlNDI5OWU2NTc3ODA0Mzk0ODU5NGZiMDQ5Njk2OGNiYzJiOGU2OTI2MjIzMjczZTA%3D%2196e4sdLWrezE46RaCBzzP43/LEM5en2KujAosbeDimQ%3D%7Ehmac%3D1BE9DEB8262AB4886A0CB9E8376D04652F015751B88DD3D2201DE463D9E47733&hdntl=exp=1406043393~acl=%2f*~data=hdntl~hmac=28d5e28f47b7b3821fafae0250ba37091f2fc66d1a9d39b76b925c423458c537'+'&hdcore=2.11.3'
-
-        #php AdobeHDS.php --manifest "http://nt1livhdsweb-lh.akamaihd.net/z/live_1@90590/manifest.f4m?hdnea=st=1405958620~exp=1405960420~acl=/*~hmac=5ca0d2521a99c897fb9ffaf6ed9c2e40e5d0300cdcdd9dfb7302d9e32a84f98d&hdcore=2.11.3&g=VQYTYCFRUDRA"
-        #params="pvtoken=exp%3D9999999999%7Eacl%3D%252f%252a%7Edata%3DZXhwPTE0MDYwNDUwNDZ+YWNsPSUyZip+ZGF0YT1wdmMsc35obWFjPWYwYWQ5ZGQyNDJlYjdiYjQ2YmZhMzk3MjY3MzE0ZWZiOWVlYTY5MDMzYWE2ODM5ZDM1ZWVjMWM1ZDUzZTk3ZjA%3D%2196e4sdLWrezE46RaCBzzP43/LEM5en2KujAosbeDimQ%3D%7Ehmac%3D9FCCB6BC90C17E8057EE52CD53DDF0C6D07B20638D68B8FFCE98ED74153AA960&hdntl=exp=1406045046~acl=%2f*~data=hdntl~hmac=11e323633ad708a11e57a91e8c685011292f42936f5f7f3b1cb0fb8d2266586a&als=0,2,0,0,0,NaN,0,0,0,52,f,52035079.57,52035089.9,t,s,VQYTYCFRUDRA,2.11.3,52&hdcore=2.11.3"
-        #--useragent "Mozilla/5.0 (Windows NT 6.1; WOW64; rv:30.0) Gecko/20100101 Firefox/30.0"
-        #+'&als=0,2,0,0,0,NaN,0,0,0,47,f,52018363.57,52018373.9,t,s,HPFXDUMCMNPG,2.11.3,47&hdcore=2.11.3'
         params=params.replace('%2B','+')
         params=params.replace('%2F','/')
-
-        
-        #params='pvtoken=' +pvtoken+'&'+hdntl
-        #params = [("pvtoken", pvtoken)]
-        #params.extend(parse_qsl(hdntl, keep_blank_values=True))
-        #params='pvtoken=exp%3D9999999999%7Eacl%3D%252f%252a%7Edata%3DZXhwPTE0MDYwMzc2Njl+YWNsPSUyZip+ZGF0YT1wdmMsc35obWFjPWZjYzY5OTVkYjE5ODIxYTJlNDM4YTdhMWNmZjMyN2RhNTViOWNhMWM4NjZhZjYxM2ZkNDI4MTMwNjU4MjFjMjM%3D%2196e4sdLWrezE46RaCBzzP43/LEM5en2KujAosbeDimQ%3D%7Ehmac%3DFA3BCC1CF6466CAFFCC6EF5CB2855ED065F36687CBFCD11570B7D702F71F10A6&hdntl=exp=1406037669~acl=%2f*~data=hdntl~hmac=4ab5ad38849b952ae93721af7451936b4c5906258d575eda11e52a05f78c7d75&als=0,2,0,0,0,NaN,0,0,0,96,f,52027699.57,52027709.89,t,s,RUIDLGQGDHVH,2.11.3,90&hdcore=2.11.3'
-        #print '_pv_params params',params
         print params
-        print "pvtoken=exp%3D9999999999%7Eacl%3D%252f%252a%7Edata%3DZXhwPTE0MDYyODMxOTF+YWNsPSUyZip+ZGF0YT1wdmMsc35obWFjPTgwNTA0N2E1Yjk5ZmFjMjMzMDY0N2MxMzkyNGM0MDNiYzY1YjZmYzgyYTZhMjYyZDIxNDdkZTExZjI1MzQ5ZDI%3D%2196e4sdLWrezE46RaCBzzP43/LEM5en2KujAosbeDimQ%3D%7Ehmac%3D47A2B2AA9570ECFB37966C884174D608D86A7DE2466DE7EB48A6F118A155BD80&hdntl=exp=1406283191~acl=%2f*~data=hdntl~hmac=b65dc0c5ae60570f105984f0cc5ec6ce3a51422a7a1442e09f55513718ba80bf"
-
-        return "pvtoken=exp%3D9999999999%7Eacl%3D%252f%252a%7Edata%3DZXhwPTE0MDYzMDMxMTV+YWNsPSUyZip+ZGF0YT1wdmMsc35obWFjPWQxODA5MWVkYTQ4NDI3NjFjODhjOWQwY2QxNTk3YTI0MWQwOWYwNWI1N2ZmMDE0ZjcxN2QyMTVjZTJkNmJjMDQ%3D%2196e4sdLWrezE46RaCBzzP43/LEM5en2KujAosbeDimQ%3D%7Ehmac%3DACF8A1E4467676C9BCE2721CA5EFF840BD6ED1780046954039373A3B0D942ADC&hdntl=exp=1406303115~acl=%2f*~data=hdntl~hmac=4ab96fa533fd7c40204e487bfc7befaf31dd1f49c27eb1f610673fed9ff97a5f&als=0,2,0,0,0,NaN,0,0,0,37,f,52293145.57,52293155.9,t,s,GARWLHLMHNGA,2.11.3,37&hdcore=2.11.3" 
- 
         return params
         
     def swfdecompress(self,data):
