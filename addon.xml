@@ -2,8 +2,8 @@
 <addon id="plugin.video.vvvvid" version="1.0.3" name="VVVVID.it" provider-name="evilsephiroth">
     <requires>
         <import addon="xbmc.python" version="2.1.0"/>
-        <import addon="script.module.xbmcswift2" version="2.4.0"/>
         <import addon="script.module.requests" />
+        <import addon="script.module.routing" version="0.2.0"/>
     </requires>
     <extension point="xbmc.python.pluginsource" library="default.py">
         <provides>video</provides>

@@ -4,6 +4,7 @@ import urllib,urllib2
 from cookielib import CookieJar
 import urlparse
 import json
+from storage import Storage
 from vvvvid import *
 from Channel import *
 from ChannelCategory import *
@@ -14,7 +15,6 @@ from _warnings import filters
 from _elementtree import Element
 from SeasonEpisode import *
 from ItemPlayableSeason import *
-from xbmcswift2 import *
 
 VVVVID_BASE_URL="https://www.vvvvid.it/vvvvid/ondemand/"
 ANIME_CHANNELS_PATH= "anime/channels"
@@ -193,8 +193,6 @@ def get_seasons_for_item(itemPlayable):
                 else:
                     episode.stream_type = F4M_TYPE
                     episode.manifest = embed_info+'?'+postfix
-                plugin = Plugin();plugin.log.error('manifest: '+ episode.manifest)
-                #plugin = Plugin();plugin.log.error('manifest: '+ episode.manifest)
                 #episode.manifest = prefix +  episodeData['embed_info'] + postfix
                 episode.title = ((episodeData['number'] + ' - ' + episodeData['title'])).encode('utf-8','replace')
                 episode.thumb = episodeData['thumbnail']
@@ -204,16 +202,13 @@ def get_seasons_for_item(itemPlayable):
     return itemPlayable
 
 def getJsonDataFromUrl(customUrl):
-    plugin = Plugin()
-    data_storage = plugin.get_storage('vvvvid')
-    conn_id = data_storage['conn_id']
-    #plugin.log.error('customUrl: '+ customUrl)
+    data_storage = Storage()
+    conn_id = data_storage.get('conn_id')
     customUrl += ('&' if ('?' in customUrl) else '?') +'conn_id='+conn_id
-    #plugin.log.error('output:'+ customUrl)
     #req = urllib2.Request(customUrl)
     #req.add_header('User-Agent', 'Mozilla/5.0 (Windows; U; Windows NT 5.1; en-GB; rv:1.8.1.14) Gecko/20080404 Firefox/2.0.0.14')
     #page = urllib2.urlopen(req);response=page.read();page.close()
-    cookie=data_storage['cookie']
+    cookie = data_storage.get('cookie')
     req = urllib2.Request(customUrl)#send the new url with the cookie.
     req.add_header('User-Agent', 'Mozilla/5.0 (Windows; U; Windows NT 5.1; en-GB; rv:1.8.1.14) Gecko/20080404 Firefox/2.0.0.14')
     req.add_header('Cookie',cookie)
